@@ -26,6 +26,8 @@ struct Tab {
 	TabEvents events;
 	AdwTabPage *page;
 	GtkWidget *root, *overlay, *scroller, *clamp, *content, *editor, *editor_clamp, *error_page;
+	/* Shown on the error page when the file does not exist */
+	GtkWidget *create_button;
 	/* Column view page for CSV and TSV files, made when the first rows arrive */
 	GtkWidget *data_table;
 	/* Pencil that follows the pointer and opens the editor at the line beside it */

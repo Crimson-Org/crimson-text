@@ -224,6 +224,17 @@ static void swap_content(Tab *tab) {
 }
 
 
+/* A missing file names its path and offers to create it, and any other failure shows its reason */
+static void show_error_page(Tab *tab, const char *error) {
+	gboolean is_missing = !g_file_query_exists(tab->file, NULL);
+	g_autofree char *path = g_file_get_parse_name(tab->file);
+	adw_status_page_set_title(ADW_STATUS_PAGE(tab->error_page), is_missing ? TEXT_FILE_MISSING : TEXT_LOAD_FAILED);
+	adw_status_page_set_description(ADW_STATUS_PAGE(tab->error_page), is_missing ? path : error);
+	gtk_widget_set_visible(tab->create_button, is_missing);
+	gtk_stack_set_visible_child_name(GTK_STACK(tab->root), "error");
+}
+
+
 static void finish_loading(const char *error, gpointer data) {
 	Tab *tab = data;
 	g_clear_pointer(&tab->stream, stop_stream);
@@ -235,8 +246,7 @@ static void finish_loading(const char *error, gpointer data) {
 	}
 	GtkTextBuffer *shown = gtk_text_view_get_buffer(GTK_TEXT_VIEW(tab->content));
 	if (error && !tab->is_code && gtk_text_buffer_get_char_count(shown) == 0) {
-		adw_status_page_set_description(ADW_STATUS_PAGE(tab->error_page), error);
-		gtk_stack_set_visible_child_name(GTK_STACK(tab->root), "error");
+		show_error_page(tab, error);
 		return;
 	}
 	if (!tab->is_code)
@@ -413,6 +423,26 @@ static void set_up_context(RenderContext *context, GFile *file, Tab *tab) {
 }
 
 
+/* Writes the missing file empty, with its folders, and opens it for editing */
+static void create_missing_file(Tab *tab) {
+	g_autoptr(GFile) folder = g_file_get_parent(tab->file);
+	g_autoptr(GError) error = NULL;
+	gboolean is_folder_ready = !folder || g_file_make_directory_with_parents(folder, NULL, &error)
+		|| g_error_matches(error, G_IO_ERROR, G_IO_ERROR_EXISTS);
+	g_clear_error(&error);
+	g_autoptr(GFileOutputStream) stream = is_folder_ready ? g_file_create(tab->file, G_FILE_CREATE_NONE, NULL, &error)
+		: NULL;
+	if (!stream && !g_error_matches(error, G_IO_ERROR, G_IO_ERROR_EXISTS)) {
+		g_autofree char *message = g_strdup_printf(TEXT_CREATE_FAILED, error ? error->message : "");
+		tab->events.show_message(tab, message, tab->events.data);
+		return;
+	}
+	gtk_stack_set_visible_child_name(GTK_STACK(tab->root), "loading");
+	start_rendering(tab, NULL);
+	request_tab_editing(tab);
+}
+
+
 Tab *create_tab(GFile *file, const TabEvents *events) {
 	Tab *tab = g_new0(Tab, 1);
 	tab->events = *events;
@@ -430,7 +460,12 @@ Tab *create_tab(GFile *file, const TabEvents *events) {
 	gtk_stack_add_named(GTK_STACK(tab->root), create_edit_page(tab), "edit");
 	tab->error_page = adw_status_page_new();
 	adw_status_page_set_icon_name(ADW_STATUS_PAGE(tab->error_page), "dialog-error-symbolic");
-	adw_status_page_set_title(ADW_STATUS_PAGE(tab->error_page), TEXT_LOAD_FAILED);
+	tab->create_button = gtk_button_new_with_label(TEXT_CREATE_FILE);
+	gtk_widget_set_halign(tab->create_button, GTK_ALIGN_CENTER);
+	gtk_widget_add_css_class(tab->create_button, "pill");
+	gtk_widget_add_css_class(tab->create_button, "suggested-action");
+	g_signal_connect_swapped(tab->create_button, "clicked", G_CALLBACK(create_missing_file), tab);
+	adw_status_page_set_child(ADW_STATUS_PAGE(tab->error_page), tab->create_button);
 	gtk_stack_add_named(GTK_STACK(tab->root), tab->error_page, "error");
 	gtk_stack_set_visible_child_name(GTK_STACK(tab->root), "loading");
 	g_object_set_data_full(G_OBJECT(tab->root), "tab", tab, free_tab);
