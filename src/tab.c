@@ -568,6 +568,11 @@ void save_tab(Tab *tab) {
 		finish_waiting_close(tab, !tab->is_read_only);
 		return;
 	}
+	g_autoptr(GFile) folder = g_file_get_parent(tab->file);
+	if (folder && !g_file_query_exists(folder, NULL)) {
+		tab->events.folder_missing(tab, tab->events.data);
+		return;
+	}
 	g_autofree char *text = get_editor_text(tab);
 	gtk_text_buffer_set_modified(gtk_text_view_get_buffer(GTK_TEXT_VIEW(tab->editor)), FALSE);
 	if (!tab->is_editing)
@@ -579,6 +584,25 @@ void save_tab(Tab *tab) {
 void save_and_close_tab(Tab *tab) {
 	tab->is_closing_after_save = TRUE;
 	save_tab(tab);
+}
+
+
+void finish_tab_folder_question(Tab *tab, gboolean is_creating) {
+	if (tab->is_closed)
+		return;
+	g_autoptr(GFile) folder = g_file_get_parent(tab->file);
+	g_autoptr(GError) error = NULL;
+	gboolean is_created = is_creating && (g_file_make_directory_with_parents(folder, NULL, &error)
+		|| g_error_matches(error, G_IO_ERROR, G_IO_ERROR_EXISTS));
+	if (is_created) {
+		save_tab(tab);
+		return;
+	}
+	if (error) {
+		g_autofree char *message = g_strdup_printf(TEXT_SAVE_FAILED, error->message);
+		tab->events.show_message(tab, message, tab->events.data);
+	}
+	finish_waiting_close(tab, FALSE);
 }
 
 

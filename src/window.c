@@ -120,6 +120,29 @@ static void show_tab_message(Tab *tab, const char *message, gpointer data) {
 }
 
 
+static void finish_folder_question(GObject *dialog, GAsyncResult *result, gpointer data) {
+	g_autoptr(GtkWidget) root = data;
+	const char *response = adw_alert_dialog_choose_finish(ADW_ALERT_DIALOG(dialog), result);
+	finish_tab_folder_question(get_tab(root), strcmp(response, "create") == 0);
+}
+
+
+static void ask_for_folder(Tab *tab, gpointer data) {
+	Window *window = data;
+	g_autoptr(GFile) folder = g_file_get_parent(tab->file);
+	g_autofree char *name = g_file_get_parse_name(folder);
+	AdwDialog *dialog = adw_alert_dialog_new(TEXT_FOLDER_MISSING_QUESTION, NULL);
+	adw_alert_dialog_format_body(ADW_ALERT_DIALOG(dialog), TEXT_FOLDER_MISSING_DETAIL, name);
+	adw_alert_dialog_add_responses(ADW_ALERT_DIALOG(dialog), "cancel", TEXT_CANCEL, "create", TEXT_CREATE_AND_SAVE,
+		NULL);
+	adw_alert_dialog_set_response_appearance(ADW_ALERT_DIALOG(dialog), "create", ADW_RESPONSE_SUGGESTED);
+	adw_alert_dialog_set_default_response(ADW_ALERT_DIALOG(dialog), "create");
+	adw_alert_dialog_set_close_response(ADW_ALERT_DIALOG(dialog), "cancel");
+	adw_alert_dialog_choose(ADW_ALERT_DIALOG(dialog), window->window, NULL, finish_folder_question,
+		g_object_ref(tab->root));
+}
+
+
 static void finish_link_question(GObject *dialog, GAsyncResult *result, gpointer data) {
 	Window *window = data;
 	if (strcmp(adw_alert_dialog_choose_finish(ADW_ALERT_DIALOG(dialog), result), "open") != 0)
@@ -212,8 +235,8 @@ Tab *open_window_file(Window *window, GFile *file) {
 			return open;
 		}
 	}
-	TabEvents events = {notice_outline_change, notice_tab_state, open_link, show_tab_message, notice_find_count,
-		window};
+	TabEvents events = {notice_outline_change, notice_tab_state, open_link, show_tab_message, ask_for_folder,
+		notice_find_count, window};
 	Tab *tab = create_tab(file, &events);
 	tab->page = adw_tab_view_append(view, tab->root);
 	g_autofree char *title = get_tab_title(tab);

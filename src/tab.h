@@ -14,6 +14,8 @@ typedef struct {
 	void (*state_changed)(Tab *tab, gpointer data);
 	void (*open_link)(Tab *tab, const char *link, gpointer data);
 	void (*show_message)(Tab *tab, const char *message, gpointer data);
+	/* Saving needs the file's folder, which does not exist yet */
+	void (*folder_missing)(Tab *tab, gpointer data);
 	/* Editor matches finished counting in the background */
 	void (*find_counted)(Tab *tab, gpointer data);
 	gpointer data;
@@ -88,6 +90,8 @@ void request_tab_editing(Tab *tab);
 void set_tab_editing(Tab *tab, gboolean is_editing);
 void save_tab(Tab *tab);
 void save_and_close_tab(Tab *tab);
+/* Creates the missing folder and saves, or ends the save and any close waiting for it */
+void finish_tab_folder_question(Tab *tab, gboolean is_creating);
 void shut_down_tab(Tab *tab);
 void show_tab_anchor(Tab *tab, const char *anchor);
 void scroll_tab_to(Tab *tab, GtkTextMark *target);
