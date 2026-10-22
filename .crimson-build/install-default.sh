@@ -1,0 +1,22 @@
+#!/bin/sh
+# Generated from tasks.json by Crimson Build, edit that file instead
+# Install Crimson Text and make it the default for text files
+set -eu
+script_directory=$(cd "$(dirname "$0")" && pwd)
+cd "$script_directory/.."
+
+sh "$script_directory/install.sh"
+export PROGRAM="crimson-text"
+export APPLICATION_ID="io.github.CrimsonOrg.CrimsonText"
+export VERSION="0.1.0"
+export PREFIX="${HOME}/.local"
+export STD="c11"
+export WARN="-Wall -Wextra -Wpedantic -Werror -Wno-unused-parameter"
+export OPT="-O2 -g"
+export PKGS="gtk4 libadwaita-1 gtksourceview-5 libcurl glycin-2"
+export LIBS="-lm"
+export DEFINES="-DAPPLICATION_VERSION=\"${VERSION}\""
+export INCLUDES="-Isrc -Isubprojects/crimson-core/src"
+export EXTRA_LICENSES="md4c=src/md4c/LICENSE"
+printf '==> %s\n' 'sh .crimson-build/make-default.sh'
+sh .crimson-build/make-default.sh

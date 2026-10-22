@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+	<id>io.github.CrimsonOrg.CrimsonText</id>
+	<name>Crimson Text</name>
+	<summary>View and edit text files beautifully</summary>
+	<metadata_license>CC0-1.0</metadata_license>
+	<project_license>LicenseRef-proprietary</project_license>
+	<description>
+		<p>A text viewer and editor that renders Markdown, task lists, CSV tables and plain text, and opens code, logs and configuration files in a coloured editor.</p>
+	</description>
+	<developer id="io.github.CrimsonOrg">
+		<name>Crimson</name>
+	</developer>
+	<releases>
+		<release version="0.1.0" date="2026-10-16"/>
+	</releases>
+	<launchable type="desktop-id">io.github.CrimsonOrg.CrimsonText.desktop</launchable>
+	<provides>
+		<binary>crimson-text</binary>
+	</provides>
+	<content_rating type="oars-1.1"/>
+</component>

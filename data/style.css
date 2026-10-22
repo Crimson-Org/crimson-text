@@ -1,0 +1,107 @@
+.document {
+	background-color: var(--view-bg-color);
+	color: var(--view-fg-color);
+}
+
+.table {
+	background-color: alpha(currentColor, 0.15);
+	padding: 1px;
+	border-radius: 6px;
+}
+
+.cell {
+	background-color: var(--view-bg-color);
+	padding: 6px 13px;
+}
+
+.cell.even {
+	background-image: linear-gradient(alpha(currentColor, 0.04), alpha(currentColor, 0.04));
+}
+
+.cell.header {
+	font-weight: 600;
+}
+
+.picture {
+	opacity: 0;
+	transition: opacity 320ms ease-out;
+}
+
+.picture.loaded {
+	opacity: 1;
+}
+
+.picture.missing {
+	opacity: var(--dim-opacity);
+}
+
+.metadata {
+	background-color: alpha(currentColor, 0.04);
+	border-radius: 8px;
+	padding: 12px 16px;
+}
+
+.block-edit {
+	opacity: 0;
+	transition: opacity 180ms ease-out;
+}
+
+.block-edit.shown {
+	opacity: 1;
+}
+
+.outline-top {
+	font-weight: 600;
+}
+
+.details-summary {
+	font-weight: 600;
+}
+
+.details-arrow {
+	transition: -gtk-icon-transform 200ms ease-out;
+}
+
+.details-summary.open .details-arrow {
+	-gtk-icon-transform: rotate(90deg);
+}
+
+.alert-icon {
+	color: var(--alert-color);
+}
+
+.alert-note {
+	--alert-color: var(--blue-3);
+}
+
+.alert-tip {
+	--alert-color: var(--green-4);
+}
+
+.alert-important {
+	--alert-color: var(--purple-3);
+}
+
+.alert-warning {
+	--alert-color: var(--yellow-5);
+}
+
+.alert-caution {
+	--alert-color: var(--red-3);
+}
+
+.alert-quiet {
+	--alert-color: alpha(currentColor, 0.5);
+}
+
+/* Embedded widgets stand on the text baseline, so the box hangs a little below it to centre on the text */
+checkbutton.task {
+	padding: 0;
+	margin-bottom: -4px;
+}
+
+/* The style scheme paints its own page colour, so the editor takes the page colour around it */
+textview.editor,
+textview.editor text {
+	background-color: transparent;
+}

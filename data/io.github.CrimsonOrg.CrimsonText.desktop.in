@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Crimson Text
+Comment=View and edit text files beautifully
+Exec=env GNUTLS_NO_IMPLICIT_INIT=1 @EXEC@ %U
+Icon=io.github.CrimsonOrg.CrimsonText
+Terminal=false
+Categories=Utility;TextEditor;GTK;
+MimeType=text/markdown;application/x-zerosize;text/x-nix;text/x-markdown;text/plain;text/x-log;text/csv;text/tab-separated-values;application/json;application/xml;text/xml;application/toml;application/x-yaml;text/x-csrc;text/x-chdr;text/x-c++src;text/x-python;application/x-shellscript;text/x-shellscript;text/x-script;application/x-desktop;text/x-makefile;text/x-patch;text/css;text/html;
+Keywords=markdown;viewer;text;editor;readme;todo;
+StartupNotify=true
