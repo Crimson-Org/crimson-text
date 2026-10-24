@@ -424,12 +424,13 @@ static gboolean close_window(GtkWindow *gtk_window, Window *window) {
 		return GDK_EVENT_STOP;
 	}
 	remember_sidebar(window);
-	AdwTabView *view = ADW_TAB_VIEW(window->tab_view);
-	for (int index = 0; index < adw_tab_view_get_n_pages(view); index++)
-		shut_down_tab(get_tab(adw_tab_page_get_child(adw_tab_view_get_nth_page(view, index))));
 	WindowState state = {.shows_sidebar = window->shows_sidebar};
 	read_window_geometry(gtk_window, &state.geometry);
 	save_window_state(&state);
+	hide_closing_window(gtk_window);
+	AdwTabView *view = ADW_TAB_VIEW(window->tab_view);
+	for (int index = 0; index < adw_tab_view_get_n_pages(view); index++)
+		shut_down_tab(get_tab(adw_tab_page_get_child(adw_tab_view_get_nth_page(view, index))));
 	return GDK_EVENT_PROPAGATE;
 }
 
