@@ -7,6 +7,9 @@
 
 /* Longest stretch of widget building before the main loop gets to draw a frame */
 #define SLICE_MICROSECONDS 6000
+/* Just below GTK's redraw at G_PRIORITY_HIGH_IDLE + 20, so frames still come first while the text views wait to
+ * lay out until the whole file is in, which otherwise stretched big files over many seconds */
+#define DELIVERY_PRIORITY (G_PRIORITY_HIGH_IDLE + 21)
 #define MAXIMUM_FILE_BYTES (256 * 1024 * 1024)
 /* A zero byte this early means the file is not text */
 #define BINARY_SCAN_BYTES 8192
@@ -100,7 +103,7 @@ static gboolean deliver_stream(gpointer data) {
 /* Must be called with the lock held */
 static void schedule_delivery(Stream *stream) {
 	if (!stream->idle_source)
-		stream->idle_source = g_idle_add_full(G_PRIORITY_DEFAULT_IDLE, deliver_stream,
+		stream->idle_source = g_idle_add_full(DELIVERY_PRIORITY, deliver_stream,
 			reference_stream(stream), release_stream);
 }
 

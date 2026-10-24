@@ -78,6 +78,8 @@ struct Tab {
 	gboolean is_editing_requested;
 	/* Code files are read and edited in the editor alone, coloured by their language */
 	gboolean is_code;
+	/* The language a code file gets once all of it has streamed in */
+	GtkSourceLanguage *code_language;
 	/* Finds and marks matches in the editor, made on the first search there */
 	GtkSourceSearchContext *editor_search;
 };
