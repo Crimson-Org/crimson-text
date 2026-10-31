@@ -56,5 +56,5 @@ Steps:
  1. Clone using `git clone --recurse-submodules https://github.com/Crimson-Org/crimson-text`
  2. Run `sh .crimson-build/install.sh`
 
-`sh .crimson-build/install-default.sh` also makes it the app that opens text, Markdown, JSON, TOML and XML files.\
-`sh .crimson-build/uninstall.sh` removes it again.
+`sh .crimson-build/install-default.sh` also makes Crimson Text the app for text, Markdown, JSON, TOML and XML files.\
+`sh .crimson-build/uninstall.sh` uninstalls Crimson Text.
