@@ -23,6 +23,10 @@ READMEs, logs, TODO lists and CSV tables.</p>
   <a href="https://github.com/Crimson-Org/crimson-text/releases/latest"><b>Download Here!</b></a>
 </p>
 
+<p align="center">
+  <img src="./demo1.png" alt="Crimson Text showing a Markdown page">
+</p>
+
 ## Why
 
 Other viewers start slowly, forget the window size or crowd the page with controls.\
