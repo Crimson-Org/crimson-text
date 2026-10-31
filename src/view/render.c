@@ -9,6 +9,7 @@
 #include "view/render.h"
 #include "common/smooth-scroll.h"
 #include "editor/source-view.h"
+#include "common/spacing.h"
 
 #define LIST_SPACING 6
 #define MAXIMUM_CELL_CHARACTERS 48
@@ -20,9 +21,6 @@
 #define SUPERSCRIPT_RISE (5 * PANGO_SCALE)
 #define BIG_SCALE 1.2
 #define SCRIPT_SCALE 0.8
-#define METADATA_COLUMN_SPACING 16
-#define METADATA_ROW_SPACING 4
-#define DETAILS_SPACING 8
 /* A quote adds its bar and its text style to every line inside it */
 #define QUOTE_LINE_TAG_COUNT 2
 
@@ -827,8 +825,8 @@ static GtkWidget *create_table(RenderContext *context, const Block *table) {
 
 static GtkWidget *create_metadata(RenderContext *context, const Block *block) {
 	GtkWidget *grid = gtk_grid_new();
-	gtk_grid_set_column_spacing(GTK_GRID(grid), METADATA_COLUMN_SPACING);
-	gtk_grid_set_row_spacing(GTK_GRID(grid), METADATA_ROW_SPACING);
+	gtk_grid_set_column_spacing(GTK_GRID(grid), SPACING_ROOMY);
+	gtk_grid_set_row_spacing(GTK_GRID(grid), SPACING_TIGHT);
 	gtk_widget_add_css_class(grid, "metadata");
 	g_auto(GStrv) lines = g_strsplit(block->text, "\n", -1);
 	for (int index = 0; lines[index]; index++) {
@@ -855,7 +853,7 @@ static void toggle_details(GtkButton *summary, GtkTextTag *hidden) {
 
 /* A summary button that shows and hides the section's text, as GitHub shows HTML details */
 static void render_details(RenderContext *context, const Block *block) {
-	GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, DETAILS_SPACING);
+	GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, SPACING_SNUG);
 	GtkWidget *arrow = gtk_image_new_from_icon_name("pan-end-symbolic");
 	gtk_widget_add_css_class(arrow, "details-arrow");
 	gtk_box_append(GTK_BOX(row), arrow);

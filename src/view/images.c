@@ -8,14 +8,13 @@
 #include "lang/en.h"
 #include "view/images.h"
 #include "app/launch.h"
+#include "common/key-store.h"
 
 #define LOADER_THREADS 6
 #define DOWNLOAD_TIMEOUT_SECONDS 30L
 #define CONNECT_TIMEOUT_SECONDS 10L
 #define MAXIMUM_DOWNLOAD_BYTES (64L * 1024 * 1024)
 #define MISSING_ICON_SIZE 32
-/* Saved pictures are only for this user */
-#define PRIVATE_FOLDER_MODE 0700
 
 /* How the one time curl set up went, which g_once_init needs to be other than zero */
 enum {
@@ -351,7 +350,7 @@ static GFile *get_picture_file(GtkPicture *picture) {
 	g_autofree char *name = g_strconcat(hash, ".png", NULL);
 	g_autofree char *directory = g_build_filename(g_get_user_cache_dir(), "crimson-text", "pictures", NULL);
 	g_autofree char *path = g_build_filename(directory, name, NULL);
-	if (g_mkdir_with_parents(directory, PRIVATE_FOLDER_MODE) != 0 || !gdk_texture_save_to_png(texture, path))
+	if (!make_private_folder(directory) || !gdk_texture_save_to_png(texture, path))
 		return NULL;
 	return g_file_new_for_path(path);
 }
