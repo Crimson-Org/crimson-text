@@ -120,12 +120,12 @@ printf '==> %s\n' 'mkdir build/obj'
 crimson_mkdir "build/obj"
 printf '==> %s\n' 'glib-compile-resources --sourcedir assets --target build/resources.c --generate-source assets/crimson-text.gresource.xml'
 glib-compile-resources --sourcedir assets --target build/resources.c --generate-source assets/crimson-text.gresource.xml
-printf '==> %s\n' 'each src/*.c'
-crimson_each "src/*.c" "build/obj/{id}.o" "cc -std=${STD} \$WARN \$OPT \$DEFINES \$INCLUDES \$(pkg-config --cflags \$PKGS | sed \"s/-I/-isystem /g\") -c {from} -o {to}" "src/*.h src/lang/*.h subprojects/crimson-core/src/common/*.h subprojects/crimson-build/src/build/*.h"
+printf '==> %s\n' 'each src/*.c src/app/*.c src/document/*.c src/editor/*.c src/view/*.c src/window/*.c'
+crimson_each "src/*.c src/app/*.c src/document/*.c src/editor/*.c src/view/*.c src/window/*.c" "build/obj/{id}.o" "cc -std=${STD} \$WARN \$OPT \$DEFINES \$INCLUDES \$(pkg-config --cflags \$PKGS | sed \"s/-I/-isystem /g\") -c {from} -o {to}" "src/*/*.h subprojects/crimson-core/src/common/*.h subprojects/crimson-build/src/build/*.h"
 printf '==> %s\n' 'each subprojects/crimson-core/src/common/*.c'
-crimson_each "subprojects/crimson-core/src/common/*.c" "build/obj/{id}.o" "cc -std=${STD} \$WARN \$OPT \$DEFINES \$INCLUDES \$(pkg-config --cflags \$PKGS | sed \"s/-I/-isystem /g\") -c {from} -o {to}" "src/*.h src/lang/*.h subprojects/crimson-core/src/common/*.h subprojects/crimson-build/src/build/*.h"
+crimson_each "subprojects/crimson-core/src/common/*.c" "build/obj/{id}.o" "cc -std=${STD} \$WARN \$OPT \$DEFINES \$INCLUDES \$(pkg-config --cflags \$PKGS | sed \"s/-I/-isystem /g\") -c {from} -o {to}" "src/*/*.h subprojects/crimson-core/src/common/*.h subprojects/crimson-build/src/build/*.h"
 printf '==> %s\n' 'each src/md4c/*.c'
-crimson_each "src/md4c/*.c" "build/obj/{id}.o" "cc -std=gnu11 -O2 -g -w -c {from} -o {to}" "src/*.h src/lang/*.h subprojects/crimson-core/src/common/*.h subprojects/crimson-build/src/build/*.h"
+crimson_each "src/md4c/*.c" "build/obj/{id}.o" "cc -std=gnu11 -O2 -g -w -c {from} -o {to}" "src/*/*.h subprojects/crimson-core/src/common/*.h subprojects/crimson-build/src/build/*.h"
 printf '==> %s\n' 'cc -std=gnu11 -O2 -g $(pkg-config --cflags gio-2.0) -c build/resources.c -o build/obj/resources.o'
 cc -std=gnu11 -O2 -g $(pkg-config --cflags gio-2.0) -c build/resources.c -o build/obj/resources.o
 printf '==> %s\n' 'cc -o build/${PROGRAM} build/obj/*.o $(pkg-config --libs $PKGS) $LIBS'
