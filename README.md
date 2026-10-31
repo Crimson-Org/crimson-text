@@ -50,9 +50,9 @@ Start it with `--edit` to open files in the editor.
 You need a [C compiler](https://gcc.gnu.org/), [make](https://www.gnu.org/software/make/), [pkg-config](https://www.freedesktop.org/wiki/Software/pkg-config/) and the development files for [GTK4](https://gtk.org) 4.14, [libadwaita](https://gnome.pages.gitlab.gnome.org/libadwaita/) 1.8, [GtkSourceView](https://gitlab.gnome.org/GNOME/gtksourceview) 5 and [libcurl](https://curl.se/libcurl/).\
 On [openSUSE](https://www.opensuse.org/) these come from `sudo zypper install gcc make pkg-config gtk4-devel libadwaita-devel gtksourceview5-devel libcurl-devel`.
 
-Clone it with `git clone --recurse-submodules` so the shared Crimson Core code comes along.\
-`sh .crimson-build/install.sh` installs it, and it shows up in Open With.\
-`sh .crimson-build/install-default.sh` also opens text, INI, Markdown, [JSON](https://www.json.org/), [TOML](https://toml.io/), XML and empty files with it, and these and shell scripts in its editor when you middle click them in [Dolphin](https://apps.kde.org/dolphin/).\
-`sh .crimson-build/uninstall.sh` removes it.\
-`sh .crimson-build/run.sh` builds and starts it and `sh .crimson-build/archive.sh` writes a tar.gz to `dist/`.\
-`sh .crimson-build/appimage.sh` writes an [AppImage](https://appimage.org/) to `dist/` on [Arch Linux](https://archlinux.org/).
+Steps:
+ 1. Clone using `git clone --recurse-submodules https://github.com/Crimson-Org/crimson-text`
+ 2. Run `sh .crimson-build/install.sh`
+
+`sh .crimson-build/install-default.sh` also makes it the app that opens text, Markdown, JSON, TOML and XML files.\
+`sh .crimson-build/uninstall.sh` removes it again.
