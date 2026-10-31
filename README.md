@@ -28,7 +28,7 @@ READMEs, logs, TODO lists and CSV tables.</p>
 Other viewers start slowly, forget the window size or crowd the page with controls.\
 Crimson Text remembers the window size and shows only the document, with a contents sidebar on request.
 
-## Features
+## About
 
 ### Streaming
 
