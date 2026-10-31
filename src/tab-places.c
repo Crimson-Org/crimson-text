@@ -9,7 +9,6 @@
 
 #define SCROLL_DURATION 360
 #define SCROLL_MARGIN 12
-#define EDITOR_LANDING_ALIGN 0.15
 #define BLOCK_EDIT_SIZE 34
 #define BLOCK_EDIT_GAP 6
 /* Pixels a block may start above the view and still count as starting in it */
@@ -356,10 +355,13 @@ static gboolean land_editor(GtkWidget *root, GdkFrameClock *clock, gpointer data
 	GdkRectangle location;
 	gtk_text_buffer_get_iter_at_mark(buffer, &iter, mark);
 	gtk_text_view_get_iter_location(GTK_TEXT_VIEW(tab->editor), &iter, &location);
+	/* The line lands where get_editor_line reads, so leaving and coming back never drifts */
+	GdkRectangle visible;
+	gtk_text_view_get_visible_rect(GTK_TEXT_VIEW(tab->editor), &visible);
 	GtkAdjustment *adjustment = gtk_scrollable_get_vadjustment(GTK_SCROLLABLE(tab->editor));
-	double page = gtk_adjustment_get_page_size(adjustment);
-	double maximum = gtk_adjustment_get_upper(adjustment) - page;
-	gtk_adjustment_set_value(adjustment, CLAMP(location.y - page * EDITOR_LANDING_ALIGN, 0, MAX(maximum, 0)));
+	double value = location.y - EDITOR_MARGIN + gtk_adjustment_get_value(adjustment) - visible.y;
+	double maximum = gtk_adjustment_get_upper(adjustment) - gtk_adjustment_get_page_size(adjustment);
+	gtk_adjustment_set_value(adjustment, CLAMP(value, 0, MAX(maximum, 0)));
 	return G_SOURCE_REMOVE;
 }
 
@@ -384,6 +386,15 @@ int get_editor_line(Tab *tab) {
 	GtkTextIter iter;
 	gtk_text_view_get_line_at_y(GTK_TEXT_VIEW(tab->editor), &iter, visible.y + EDITOR_MARGIN, NULL);
 	return get_joined_line(gtk_text_view_get_buffer(GTK_TEXT_VIEW(tab->editor)), gtk_text_iter_get_line(&iter)) + 1;
+}
+
+
+/* The editor stays as the reader left it, caret and all, unless the view has moved to another block since */
+void follow_view_in_editor(Tab *tab) {
+	int view_line = get_view_line(tab);
+	GtkTextMark *editor_block = find_line_mark(tab, get_editor_line(tab));
+	if (!editor_block || editor_block != find_line_mark(tab, view_line))
+		scroll_editor_to_line(tab, view_line);
 }
 
 

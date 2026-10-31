@@ -366,7 +366,7 @@ void write_html_tag(InlineWriter *writer, const char *tag, gsize size) {
 		else
 			write_html_link(writer, tag, size);
 	} else if (strcmp(name, "li") == 0 && !is_closing) {
-		write_markup(writer, "\n• ");
+		write_markup(writer, "\n" LIST_BULLET " ");
 	} else if (is_break_tag(name)) {
 		g_autofree char *align = is_closing ? NULL : get_attribute(tag, size, "align");
 		if (strcmp(name, "center") == 0 || g_strcmp0(align, "center") == 0)

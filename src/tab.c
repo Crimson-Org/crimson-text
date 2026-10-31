@@ -213,10 +213,14 @@ static void add_block(const Block *block, gpointer data) {
 /* Puts newly rendered content and its context in place and keeps the reader where they were */
 static void swap_content(Tab *tab) {
 	int line = tab->pending_line ? tab->pending_line : get_view_line(tab);
+	g_autoptr(GtkWidget) old_content = g_object_ref(tab->content);
 	tab->content = tab->next_content;
 	tab->next_content = NULL;
 	adw_clamp_scrollable_set_child(ADW_CLAMP_SCROLLABLE(tab->clamp), tab->content);
 	g_object_unref(tab->content);
+	/* The clamp leaves the old view listening to the scroll bar, which would call it after it is freed */
+	gtk_scrollable_set_hadjustment(GTK_SCROLLABLE(old_content), NULL);
+	gtk_scrollable_set_vadjustment(GTK_SCROLLABLE(old_content), NULL);
 	swap_render_contexts(&tab->context, &tab->next_context);
 	tab->outline_generation++;
 	tab->events.outline_changed(tab, tab->events.data);
@@ -508,9 +512,12 @@ void change_tab_editing(Tab *tab, gboolean is_editing, int line) {
 	if (is_editing) {
 		if (!tab->is_editor_filled)
 			fill_editor(tab);
+		if (line > 0)
+			scroll_editor_to_line(tab, line);
+		else
+			follow_view_in_editor(tab);
 		gtk_stack_set_visible_child_full(GTK_STACK(tab->root), "edit", GTK_STACK_TRANSITION_TYPE_SLIDE_LEFT);
 		gtk_widget_grab_focus(tab->editor);
-		scroll_editor_to_line(tab, line > 0 ? line : get_view_line(tab));
 	} else {
 		int editor_line = tab->is_editor_filled ? get_editor_line(tab) : 0;
 		if (tab->is_editor_filled) {

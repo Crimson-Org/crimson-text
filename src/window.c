@@ -15,6 +15,8 @@
 #define SIDEBAR_MAXIMUM_WIDTH 300
 #define NARROW_CONDITION "max-width: 640sp"
 #define BACK_BUTTON 8
+/* Put before the title of a document with unsaved changes */
+#define MODIFIED_MARK "\u2022 "
 #define FORWARD_BUTTON 9
 
 
@@ -87,7 +89,7 @@ static void update_window(Window *window) {
 		adw_window_title_set_subtitle(ADW_WINDOW_TITLE(window->title), NULL);
 	} else {
 		g_autofree char *name = get_tab_title(tab);
-		g_autofree char *title = is_tab_modified(tab) ? g_strconcat("• ", name, NULL) : g_strdup(name);
+		g_autofree char *title = is_tab_modified(tab) ? g_strconcat(MODIFIED_MARK, name, NULL) : g_strdup(name);
 		g_autofree char *directory = get_display_directory(tab->file);
 		adw_window_title_set_title(ADW_WINDOW_TITLE(window->title), title);
 		adw_window_title_set_subtitle(ADW_WINDOW_TITLE(window->title), directory);

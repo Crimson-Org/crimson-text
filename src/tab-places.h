@@ -18,6 +18,7 @@ int get_view_line(Tab *tab);
 void request_view_line(Tab *tab, int line);
 void scroll_editor_to_line(Tab *tab, int line);
 int get_editor_line(Tab *tab);
+void follow_view_in_editor(Tab *tab);
 void remember_place(Tab *tab);
 GtkWidget *add_block_edit(Tab *tab);
 void add_block_menu(Tab *tab, GtkWidget *view);

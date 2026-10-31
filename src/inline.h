@@ -4,6 +4,9 @@
 
 #include "document.h"
 
+/* The bullet of a top level list item, shared by Markdown and HTML lists */
+#define LIST_BULLET "\u2022"
+
 /* Marks a soft line break until the style decides whether it shows */
 #define SOFT_BREAK '\x1f'
 

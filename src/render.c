@@ -22,7 +22,8 @@
 #define BIG_SCALE 1.2
 #define SCRIPT_SCALE 0.8
 
-static const char *const BULLETS[BULLET_COUNT] = {"•", "◦", "▪"};
+/* Bullet, white bullet and small square, by list depth */
+static const char *const BULLETS[BULLET_COUNT] = {LIST_BULLET, "\u25E6", "\u25AA"};
 
 /* Alert kinds from GitHub and Obsidian with the look they share */
 static const struct {
