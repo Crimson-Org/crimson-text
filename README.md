@@ -3,9 +3,9 @@
 </p>
 
 <h1 align="center">Crimson Text</h1>
-<p align="center">A text viewer and editor for Linux that renders <a href="https://daringfireball.net/projects/markdown/">Markdown</a> and many other formats.<br>
-One click on the pencil edits the page, and one more shows it rendered.<br>
-READMEs, logs, TODO lists and CSV tables.</p>
+<p align="center">A Linux text viewer and editor for <a href="https://daringfireball.net/projects/markdown/">Markdown</a> and other formats.<br>
+Click the pencil to edit, and click again to preview.<br>
+For READMEs, logs, TODO lists and CSV tables.</p>
 
 <p align="center">
   <a href="https://gtk.org">
@@ -29,29 +29,27 @@ READMEs, logs, TODO lists and CSV tables.</p>
 
 ## Why
 
-Other viewers start slowly, forget the window size or crowd the page with controls.\
-Crimson Text remembers the window size and shows only the document, with a contents sidebar on request.
+Most viewers load slowly or clutter the screen with controls.\
+Crimson Text shows only the document, with an optional contents sidebar.
 
 ## About
 
-### Streaming
+### Markdown
 
-Documents stream in block by block, so large files and slow pictures never freeze the window.\
-Pictures load from disk or the web and fade in.\
-Files changed on disk reload unless you have unsaved edits.
+[GitHub](https://github.github.com/gfm/), [Obsidian](https://obsidian.md/) and [Pandoc](https://pandoc.org/) flavoured Markdown, with tables, task lists, alerts and HTML logos and badges.
 
-### Markdown flavours
+### Large files
 
-[GitHub](https://github.github.com/gfm/), [Obsidian](https://obsidian.md/) and [Pandoc](https://pandoc.org/) flavoured Markdown, including alerts, task lists, tables, front matter and the HTML READMEs use for centred logos and badges.
+Large files and pictures never freeze the window, since they load in pieces.\
+Files reload by themselves when changed on disk, unless you have unsaved edits.
 
 ### More than Markdown
 
-Code, scripts, logs and configuration open in a coloured editor, TODO files become tickable checklists and CSV files become tables.\
-Start it with `--edit` to open files in the editor.
+Code and logs open with colours, TODO files become tickable lists and CSV files become tables.
 
 ## Building
 
-You need a [C compiler](https://gcc.gnu.org/), [make](https://www.gnu.org/software/make/), [pkg-config](https://www.freedesktop.org/wiki/Software/pkg-config/) and the development files for [GTK4](https://gtk.org) 4.14, [libadwaita](https://gnome.pages.gitlab.gnome.org/libadwaita/) 1.8, [GtkSourceView](https://gitlab.gnome.org/GNOME/gtksourceview) 5 and [libcurl](https://curl.se/libcurl/).\
+You need a [C compiler](https://gcc.gnu.org/), [make](https://www.gnu.org/software/make/), [pkg-config](https://www.freedesktop.org/wiki/Software/pkg-config/) and the development files for [GTK4](https://gtk.org), [libadwaita](https://gnome.pages.gitlab.gnome.org/libadwaita/), [GtkSourceView](https://gitlab.gnome.org/GNOME/gtksourceview) and [libcurl](https://curl.se/libcurl/).\
 On [openSUSE](https://www.opensuse.org/) these come from `sudo zypper install gcc make pkg-config gtk4-devel libadwaita-devel gtksourceview5-devel libcurl-devel`.
 
 Steps:
