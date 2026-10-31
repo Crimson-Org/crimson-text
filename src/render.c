@@ -1,7 +1,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "../lang/en.h"
+#include "lang/en.h"
 #include "document-view.h"
 #include "images.h"
 #include "inline.h"

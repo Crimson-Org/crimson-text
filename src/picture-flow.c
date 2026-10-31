@@ -1,6 +1,6 @@
 #include <math.h>
 
-#include "../lang/en.h"
+#include "lang/en.h"
 #include "images.h"
 #include "picture-flow.h"
 

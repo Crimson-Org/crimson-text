@@ -1,6 +1,6 @@
 #include <string.h>
 
-#include "../lang/en.h"
+#include "lang/en.h"
 #include "charset.h"
 #include "parse.h"
 #include "stream.h"

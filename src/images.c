@@ -5,7 +5,7 @@
 
 #include <glib/gstdio.h>
 
-#include "../lang/en.h"
+#include "lang/en.h"
 #include "images.h"
 #include "launch.h"
 

@@ -1,4 +1,4 @@
-#include "../lang/en.h"
+#include "lang/en.h"
 #include "tab-find.h"
 #include "window-private.h"
 
