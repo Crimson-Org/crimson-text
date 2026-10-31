@@ -14,6 +14,14 @@
 #define CONNECT_TIMEOUT_SECONDS 10L
 #define MAXIMUM_DOWNLOAD_BYTES (64L * 1024 * 1024)
 #define MISSING_ICON_SIZE 32
+/* Saved pictures are only for this user */
+#define PRIVATE_FOLDER_MODE 0700
+
+/* How the one time curl set up went, which g_once_init needs to be other than zero */
+enum {
+	CURL_READY = 1,
+	CURL_FAILED,
+};
 #define USER_AGENT "CrimsonText/1.0"
 #define MAXIMUM_PICTURE_BYTES (64 * 1024 * 1024)
 /* Decoded pictures above this many pixels are refused, since each pixel takes four bytes of memory */
@@ -82,7 +90,7 @@ static GBytes *download(ImageJob *job, char **error) {
 	const char *url = job->location;
 	static gsize is_curl_ready;
 	if (g_once_init_enter(&is_curl_ready))
-		g_once_init_leave(&is_curl_ready, curl_global_init(CURL_GLOBAL_DEFAULT) == CURLE_OK ? 1 : 2);
+		g_once_init_leave(&is_curl_ready, curl_global_init(CURL_GLOBAL_DEFAULT) == CURLE_OK ? CURL_READY : CURL_FAILED);
 	CURL *request = curl_easy_init();
 	if (!request) {
 		*error = g_strdup("The network library could not start");
@@ -343,7 +351,7 @@ static GFile *get_picture_file(GtkPicture *picture) {
 	g_autofree char *name = g_strconcat(hash, ".png", NULL);
 	g_autofree char *directory = g_build_filename(g_get_user_cache_dir(), "crimson-text", "pictures", NULL);
 	g_autofree char *path = g_build_filename(directory, name, NULL);
-	if (g_mkdir_with_parents(directory, 0700) != 0 || !gdk_texture_save_to_png(texture, path))
+	if (g_mkdir_with_parents(directory, PRIVATE_FOLDER_MODE) != 0 || !gdk_texture_save_to_png(texture, path))
 		return NULL;
 	return g_file_new_for_path(path);
 }

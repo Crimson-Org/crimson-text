@@ -1,4 +1,10 @@
+#include <string.h>
+
 #include "document/document.h"
+
+#define CODE_FENCE_LENGTH 3
+#define BACKTICK_FENCE "```"
+#define TILDE_FENCE "~~~"
 
 static void free_piece(gpointer data) {
 	Piece *piece = data;
@@ -44,11 +50,9 @@ void add_block_anchor(Block *block, const char *anchor) {
 }
 
 
-gboolean has_only_text(const Block *block) {
-	for (guint index = 0; index < block->pieces->len; index++) {
-		const Piece *piece = g_ptr_array_index(block->pieces, index);
-		if (piece->image_source)
-			return FALSE;
-	}
-	return TRUE;
+
+gboolean starts_code_fence(const char *line, gsize size) {
+	return size >= CODE_FENCE_LENGTH
+		&& (strncmp(line, BACKTICK_FENCE, CODE_FENCE_LENGTH) == 0
+			|| strncmp(line, TILDE_FENCE, CODE_FENCE_LENGTH) == 0);
 }

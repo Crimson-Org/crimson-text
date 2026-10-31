@@ -6,6 +6,20 @@
 #include "document/parse.h"
 
 #define STYLE_SCAN_BYTES (256 * 1024)
+/* Obsidian marks: callouts such as > [!note]- and highlights such as ==text== */
+#define CALLOUT_OPEN "> [!"
+#define CALLOUT_OPEN_LENGTH (sizeof CALLOUT_OPEN - 1)
+#define HIGHLIGHT_MARK "=="
+#define HIGHLIGHT_MARK_LENGTH (sizeof HIGHLIGHT_MARK - 1)
+/* The marker that turns a quote into an alert, as in [!NOTE] */
+#define ALERT_MARK "[!"
+#define ALERT_MARK_LENGTH (sizeof ALERT_MARK - 1)
+/* YAML front matter starts with --- and ends with --- or ... on a line of their own */
+#define FRONT_MATTER_OPEN "---"
+#define FRONT_MATTER_CLOSE "..."
+#define FRONT_MATTER_MARK_LENGTH (sizeof FRONT_MATTER_OPEN - 1)
+/* The document itself and one block, so the block sits at the top level */
+#define TOP_LEVEL_STACK_DEPTH 2
 #define MATH_OPEN "<span font_family=\"serif\" style=\"italic\">"
 
 /* Pango markup for the plain md4c spans, indexed by span type */
@@ -62,13 +76,15 @@ static gboolean is_obsidian_line(const char *line, gsize size) {
 	const char *wiki = g_strstr_len(line, size, "[[");
 	if (wiki && g_strstr_len(wiki, end - wiki, "]]"))
 		return TRUE;
-	if (size > 5 && strncmp(line, "> [!", 4) == 0) {
+	if (size > CALLOUT_OPEN_LENGTH && strncmp(line, CALLOUT_OPEN, CALLOUT_OPEN_LENGTH) == 0) {
 		const char *close = memchr(line, ']', size);
-		if (g_ascii_islower(line[4]) || (close && close + 1 < end && (close[1] == '-' || close[1] == '+')))
+		gboolean folds = close && close + 1 < end && (close[1] == '-' || close[1] == '+');
+		if (g_ascii_islower(line[CALLOUT_OPEN_LENGTH]) || folds)
 			return TRUE;
 	}
-	const char *mark = g_strstr_len(line, size, "==");
-	if (!mark || mark + 2 >= end || !g_ascii_isalnum(mark[2]) || (mark > line && mark[-1] != ' '))
+	const char *mark = g_strstr_len(line, size, HIGHLIGHT_MARK);
+	if (!mark || mark + HIGHLIGHT_MARK_LENGTH >= end || !g_ascii_isalnum(mark[HIGHLIGHT_MARK_LENGTH])
+		|| (mark > line && mark[-1] != ' '))
 		return FALSE;
 	const char *close = g_strstr_len(mark + 2, end - mark - 2, "==");
 	return close && g_ascii_isalnum(close[-1]);
@@ -82,7 +98,7 @@ MarkdownStyle detect_markdown_style(const char *text, gsize length) {
 	for (const char *line = text; line < end;) {
 		const char *line_end = find_line_end(line, end);
 		gsize size = line_end - line;
-		if (strncmp(line, "```", 3) == 0 || strncmp(line, "~~~", 3) == 0)
+		if (starts_code_fence(line, size))
 			is_in_fence = !is_in_fence;
 		else if (!is_in_fence && is_obsidian_line(line, size))
 			return STYLE_OBSIDIAN;
@@ -116,7 +132,7 @@ static char *get_attribute_text(const MD_ATTRIBUTE *attribute) {
 		if (attribute->substr_types[index] == MD_TEXT_ENTITY)
 			decode_entity(attribute->text + start, end - start, text);
 		else if (attribute->substr_types[index] == MD_TEXT_NULLCHAR)
-			g_string_append_unichar(text, 0xFFFD);
+			g_string_append_unichar(text, REPLACEMENT_CHARACTER);
 		else
 			g_string_append_len(text, attribute->text + start, end - start);
 	}
@@ -172,7 +188,7 @@ static gboolean follows_fence(Parser *parser, gsize offset) {
 		previous--;
 	while (*previous == ' ')
 		previous++;
-	return strncmp(previous, "```", 3) == 0 || strncmp(previous, "~~~", 3) == 0;
+	return starts_code_fence(previous, parser->document + parser->document_length - previous);
 }
 
 
@@ -210,9 +226,9 @@ static gboolean is_github_alert(const char *kind, gsize length) {
 /* Turns a quote that opens with a marker such as [!NOTE] into an alert box, as GitHub or Obsidian would */
 static void convert_alert(MarkdownStyle style, Block *quote, Block *paragraph) {
 	Piece *first = paragraph->pieces->len ? g_ptr_array_index(paragraph->pieces, 0) : NULL;
-	if (!first || !first->markup || strncmp(first->markup, "[!", 2) != 0)
+	if (!first || !first->markup || strncmp(first->markup, ALERT_MARK, ALERT_MARK_LENGTH) != 0)
 		return;
-	const char *kind = first->markup + 2, *kind_end = kind;
+	const char *kind = first->markup + ALERT_MARK_LENGTH, *kind_end = kind;
 	while (g_ascii_isalpha(*kind_end))
 		kind_end++;
 	if (*kind_end != ']' || kind_end == kind)
@@ -431,7 +447,7 @@ static int leave_block(MD_BLOCKTYPE type, void *detail, void *data) {
 		parser->raw_block = NULL;
 	} else if (type == MD_BLOCK_HTML) {
 		parser->raw_block = NULL;
-		if (parser->stack->len == 2)
+		if (parser->stack->len == TOP_LEVEL_STACK_DEPTH)
 			take_details_tags(parser);
 		start_inline(&parser->writer, block);
 		write_html(&parser->writer, parser->raw->str, parser->raw->len);
@@ -493,7 +509,7 @@ static int write_parsed_text(MD_TEXTTYPE type, const MD_CHAR *text, MD_SIZE size
 	GString *decoded = NULL;
 	switch (type) {
 	case MD_TEXT_NULLCHAR:
-		write_text(writer, "\xEF\xBF\xBD", 3);
+		write_text(writer, REPLACEMENT_CHARACTER_TEXT, sizeof REPLACEMENT_CHARACTER_TEXT - 1);
 		break;
 	case MD_TEXT_BR:
 		write_markup(writer, "\n");
@@ -526,7 +542,8 @@ static int write_parsed_text(MD_TEXTTYPE type, const MD_CHAR *text, MD_SIZE size
 /* Hands YAML front matter over as a metadata block and returns where the Markdown starts */
 static gsize emit_front_matter(const char *text, gsize length, BlockReady ready, gpointer data) {
 	const char *end = text + length;
-	if (length < 4 || strncmp(text, "---", 3) != 0 || (text[3] != '\n' && text[3] != '\r'))
+	if (length <= FRONT_MATTER_MARK_LENGTH || strncmp(text, FRONT_MATTER_OPEN, FRONT_MATTER_MARK_LENGTH) != 0
+		|| (text[FRONT_MATTER_MARK_LENGTH] != '\n' && text[FRONT_MATTER_MARK_LENGTH] != '\r'))
 		return 0;
 	const char *start = find_line_end(text, end) + 1;
 	for (const char *line = start; line < end;) {
@@ -534,7 +551,8 @@ static gsize emit_front_matter(const char *text, gsize length, BlockReady ready,
 		gsize size = line_end - line;
 		if (size > 0 && line[size - 1] == '\r')
 			size--;
-		if (size == 3 && (strncmp(line, "---", 3) == 0 || strncmp(line, "...", 3) == 0)) {
+		if (size == FRONT_MATTER_MARK_LENGTH && (strncmp(line, FRONT_MATTER_OPEN, size) == 0
+			|| strncmp(line, FRONT_MATTER_CLOSE, size) == 0)) {
 			Block *metadata = create_block(BLOCK_METADATA);
 			metadata->line = 1;
 			metadata->text = g_strstrip(g_strndup(start, line - start));

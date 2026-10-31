@@ -76,7 +76,8 @@ static void update_window(Window *window) {
 	Tab *tab = get_current_tab(window);
 	gboolean has_tab = tab != NULL;
 	window->is_started = window->is_started || has_tab;
-	gtk_stack_set_visible_child_name(GTK_STACK(window->stack), has_tab ? "tabs" : window->is_started ? "empty" : "blank");
+	const char *page = has_tab ? "tabs" : window->is_started ? "empty" : "blank";
+	gtk_stack_set_visible_child_name(GTK_STACK(window->stack), page);
 	gboolean can_switch_editing = has_tab && can_switch_tab_editing(tab);
 	gtk_widget_set_visible(window->edit_button, can_switch_editing);
 	g_simple_action_set_enabled(window->edit_action, can_switch_editing);

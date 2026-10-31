@@ -12,6 +12,9 @@
 #define SPLIT_WATCH "split-watch"
 #define MINIMUM_NUMBER_DIGITS 2
 #define NUMBER_PADDING_PIXELS 6
+/* Room for a line number of any size a file can have */
+#define LINE_LABEL_BYTES 16
+#define DECIMAL_BASE 10
 
 /* A source view that also draws the landing flash under its text, as the reading view does */
 struct _FlashingSourceView {
@@ -126,7 +129,7 @@ G_DEFINE_FINAL_TYPE(FileLineNumbers, file_line_numbers, GTK_SOURCE_TYPE_GUTTER_R
 static void file_line_numbers_query_data(GtkSourceGutterRenderer *renderer, GtkSourceGutterLines *lines,
 	guint line) {
 	GtkTextBuffer *buffer = GTK_TEXT_BUFFER(gtk_source_gutter_renderer_get_buffer(renderer));
-	char label[16] = "";
+	char label[LINE_LABEL_BYTES] = "";
 	GtkTextIter iter;
 	gtk_text_buffer_get_iter_at_line(buffer, &iter, (int)line);
 	if (!has_split_lines(buffer))
@@ -140,7 +143,8 @@ static void file_line_numbers_query_data(GtkSourceGutterRenderer *renderer, GtkS
 static int count_number_digits(FileLineNumbers *numbers) {
 	GtkSourceBuffer *buffer = gtk_source_gutter_renderer_get_buffer(GTK_SOURCE_GUTTER_RENDERER(numbers));
 	int digits = 0;
-	for (int count = buffer ? gtk_text_buffer_get_line_count(GTK_TEXT_BUFFER(buffer)) : 1; count > 0; count /= 10)
+	int lines = buffer ? gtk_text_buffer_get_line_count(GTK_TEXT_BUFFER(buffer)) : 1;
+	for (int count = lines; count > 0; count /= DECIMAL_BASE)
 		digits++;
 	return MAX(digits, MINIMUM_NUMBER_DIGITS);
 }

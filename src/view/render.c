@@ -18,9 +18,13 @@
 #define QUOTE_INDENT 20
 #define SUBSCRIPT_RISE (-3 * PANGO_SCALE)
 #define SUPERSCRIPT_RISE (5 * PANGO_SCALE)
-#define SMALL_SCALE 0.833
 #define BIG_SCALE 1.2
 #define SCRIPT_SCALE 0.8
+#define METADATA_COLUMN_SPACING 16
+#define METADATA_ROW_SPACING 4
+#define DETAILS_SPACING 8
+/* A quote adds its bar and its text style to every line inside it */
+#define QUOTE_LINE_TAG_COUNT 2
 
 /* Bullet, white bullet and small square, by list depth */
 static const char *const BULLETS[BULLET_COUNT] = {LIST_BULLET, "\u25E6", "\u25AA"};
@@ -203,7 +207,8 @@ static void end_line(RenderContext *context, int start, GtkTextTag *extra) {
 	if (context->indent > 0) {
 		GtkTextBuffer *buffer = get_buffer(context);
 		GtkTextTag *indent = context->is_line_marked
-			? get_indent_tag(buffer, context->indent - LIST_INDENT, LIST_INDENT) : get_indent_tag(buffer, context->indent, 0);
+			? get_indent_tag(buffer, context->indent - LIST_INDENT, LIST_INDENT)
+			: get_indent_tag(buffer, context->indent, 0);
 		apply_tag(context, indent, start, end);
 	}
 	apply_tag(context, get_gap_tag(context), start, end);
@@ -562,7 +567,7 @@ static void add_task_count(RenderContext *context, const Block *block) {
 
 
 static void render_heading(RenderContext *context, const Block *block, GtkTextMark *mark) {
-	g_autofree char *level = g_strdup_printf("h%d", CLAMP(block->level, 1, 6));
+	g_autofree char *level = g_strdup_printf("h%d", CLAMP(block->level, 1, HEADING_LEVEL_COUNT));
 	GtkTextTag *tag = get_named_tag(context, level);
 	int start = begin_line(context);
 	for (guint index = 0; index < block->pieces->len; index++) {
@@ -599,7 +604,7 @@ static void render_quote(RenderContext *context, const Block *block) {
 	context->indent += QUOTE_INDENT;
 	render_children(context, block);
 	context->indent -= QUOTE_INDENT;
-	g_ptr_array_set_size(context->line_tags, context->line_tags->len - 2);
+	g_ptr_array_set_size(context->line_tags, context->line_tags->len - QUOTE_LINE_TAG_COUNT);
 }
 
 
@@ -803,7 +808,8 @@ static GtkWidget *create_table(RenderContext *context, const Block *table) {
 				gtk_widget_add_css_class(box, "even");
 			GtkWidget *content = create_cell_content(context, cell);
 			if (GTK_IS_LABEL(content)) {
-				gtk_label_set_xalign(GTK_LABEL(content), ALIGNMENTS[CLAMP(cell->level, 0, 3)]);
+				int alignment = CLAMP(cell->level, 0, (int)G_N_ELEMENTS(ALIGNMENTS) - 1);
+				gtk_label_set_xalign(GTK_LABEL(content), ALIGNMENTS[alignment]);
 				gtk_label_set_max_width_chars(GTK_LABEL(content), MAXIMUM_CELL_CHARACTERS);
 			}
 			if (content)
@@ -821,8 +827,8 @@ static GtkWidget *create_table(RenderContext *context, const Block *table) {
 
 static GtkWidget *create_metadata(RenderContext *context, const Block *block) {
 	GtkWidget *grid = gtk_grid_new();
-	gtk_grid_set_column_spacing(GTK_GRID(grid), 16);
-	gtk_grid_set_row_spacing(GTK_GRID(grid), 4);
+	gtk_grid_set_column_spacing(GTK_GRID(grid), METADATA_COLUMN_SPACING);
+	gtk_grid_set_row_spacing(GTK_GRID(grid), METADATA_ROW_SPACING);
 	gtk_widget_add_css_class(grid, "metadata");
 	g_auto(GStrv) lines = g_strsplit(block->text, "\n", -1);
 	for (int index = 0; lines[index]; index++) {
@@ -849,7 +855,7 @@ static void toggle_details(GtkButton *summary, GtkTextTag *hidden) {
 
 /* A summary button that shows and hides the section's text, as GitHub shows HTML details */
 static void render_details(RenderContext *context, const Block *block) {
-	GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+	GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, DETAILS_SPACING);
 	GtkWidget *arrow = gtk_image_new_from_icon_name("pan-end-symbolic");
 	gtk_widget_add_css_class(arrow, "details-arrow");
 	gtk_box_append(GTK_BOX(row), arrow);

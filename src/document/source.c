@@ -7,6 +7,14 @@
 #define KIND_SCAN_BYTES (64 * 1024)
 /* Longest run of plain text lines in one block, so huge files never become one label */
 #define TEXT_BLOCK_LINES 200
+/* A script names its interpreter on a first line such as #!/usr/bin/env python3 */
+#define SHEBANG "#!"
+#define SHEBANG_LENGTH (sizeof SHEBANG - 1)
+/* Bare web addresses are found by their start and kept when they use one of the two web prefixes */
+#define ADDRESS_START "http"
+#define ADDRESS_START_LENGTH (sizeof ADDRESS_START - 1)
+#define HTTP_PREFIX "http://"
+#define HTTPS_PREFIX "https://"
 
 const char *const MARKDOWN_EXTENSIONS[] = {"md", "markdown", "mdown", "mkd", "mkdn", "mdx"};
 const guint MARKDOWN_EXTENSION_COUNT = G_N_ELEMENTS(MARKDOWN_EXTENSIONS);
@@ -58,7 +66,7 @@ static gboolean is_listed(const char *value, const char *const *list, guint coun
 /* Reads the interpreter name from a line such as #!/usr/bin/env python3 */
 static char *get_interpreter(const char *text, gsize length) {
 	gsize line_length = strcspn(text, "\n");
-	g_autofree char *line = g_strndup(text + 2, MIN(line_length, length) - 2);
+	g_autofree char *line = g_strndup(text + SHEBANG_LENGTH, MIN(line_length, length) - SHEBANG_LENGTH);
 	g_auto(GStrv) words = g_strsplit_set(g_strstrip(line), " \t", -1);
 	if (!words[0])
 		return NULL;
@@ -80,7 +88,8 @@ static gboolean looks_like_markdown(const char *text, gsize length) {
 		gsize hashes = 0;
 		while (hashes < size && line[hashes] == '#')
 			hashes++;
-		if ((hashes > 0 && hashes <= 6 && hashes < size && line[hashes] == ' ') || strncmp(line, "```", 3) == 0
+		gboolean is_heading = hashes > 0 && hashes <= HEADING_LEVEL_COUNT && hashes < size && line[hashes] == ' ';
+		if (is_heading || starts_code_fence(line, size)
 			|| g_strstr_len(line, size, "]("))
 			return TRUE;
 		line = line_end + 1;
@@ -124,7 +133,7 @@ DocumentKind detect_document_kind(const char *name, const char *text, gsize leng
 		*language = g_ascii_strdown(extension, -1);
 		return DOCUMENT_TABLE;
 	}
-	if (length > 2 && text[0] == '#' && text[1] == '!') {
+	if (length > SHEBANG_LENGTH && strncmp(text, SHEBANG, SHEBANG_LENGTH) == 0) {
 		*language = get_interpreter(text, length);
 		return DOCUMENT_SOURCE;
 	}
@@ -181,19 +190,19 @@ static char *link_addresses(const char *text, gsize length) {
 	GString *markup = g_string_sized_new(length);
 	gsize position = 0;
 	while (position < length) {
-		const char *found = g_strstr_len(text + position, length - position, "http");
+		const char *found = g_strstr_len(text + position, length - position, ADDRESS_START);
 		gsize start = found ? (gsize)(found - text) : length;
-		gboolean is_address = found && (strncmp(found, "http://", 7) == 0 || strncmp(found, "https://", 8) == 0);
+		gboolean is_address = found && (g_str_has_prefix(found, HTTP_PREFIX) || g_str_has_prefix(found, HTTPS_PREFIX));
 		gsize end = start;
 		while (is_address && end < length && !g_ascii_isspace(text[end]) && text[end] != '<')
 			end++;
 		while (is_address && end > start && strchr(URL_TRAILING, text[end - 1]))
 			end--;
-		g_autofree char *before = g_markup_escape_text(text + position, (is_address ? start : MIN(start + 4, length))
-			- position);
+		gsize plain_end = is_address ? start : MIN(start + ADDRESS_START_LENGTH, length);
+		g_autofree char *before = g_markup_escape_text(text + position, plain_end - position);
 		g_string_append(markup, before);
 		if (!is_address) {
-			position = MIN(start + 4, length);
+			position = MIN(start + ADDRESS_START_LENGTH, length);
 			continue;
 		}
 		g_autofree char *address = g_strndup(text + start, end - start);

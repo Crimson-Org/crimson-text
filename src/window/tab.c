@@ -524,7 +524,8 @@ void change_tab_editing(Tab *tab, gboolean is_editing, int line) {
 			g_autofree char *text = get_editor_text(tab);
 			render_again(tab, text);
 		}
-		gtk_stack_set_visible_child_full(GTK_STACK(tab->root), get_view_page(tab), GTK_STACK_TRANSITION_TYPE_SLIDE_RIGHT);
+		gtk_stack_set_visible_child_full(GTK_STACK(tab->root), get_view_page(tab),
+			GTK_STACK_TRANSITION_TYPE_SLIDE_RIGHT);
 		request_view_line(tab, line > 0 ? line : editor_line);
 	}
 	tab->events.state_changed(tab, tab->events.data);
@@ -660,7 +661,8 @@ static void toggle_task(long offset, gboolean is_done, gpointer data) {
 	char mark = is_done ? 'x' : ' ';
 	GtkTextBuffer *buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(tab->editor));
 	GtkTextIter start, end;
-	gtk_text_buffer_get_iter_at_offset(buffer, &start, (int)g_utf8_pointer_to_offset(tab->source, tab->source + offset));
+	glong character_offset = g_utf8_pointer_to_offset(tab->source, tab->source + offset);
+	gtk_text_buffer_get_iter_at_offset(buffer, &start, (int)character_offset);
 	end = start;
 	gtk_text_iter_forward_char(&end);
 	gtk_text_buffer_begin_user_action(buffer);

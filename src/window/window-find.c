@@ -3,6 +3,7 @@
 #include "window/window-private.h"
 
 #define FIND_BAR_WIDTH 600
+#define FIND_ROW_SPACING 6
 
 
 static void run_find(Window *window, FindDirection direction) {
@@ -96,7 +97,7 @@ GtkWidget *create_find_bar(Window *window) {
 	window->find_count = gtk_label_new(NULL);
 	gtk_widget_add_css_class(window->find_count, "dimmed");
 	gtk_widget_add_css_class(window->find_count, "numeric");
-	GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+	GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, FIND_ROW_SPACING);
 	gtk_box_append(GTK_BOX(row), window->find_entry);
 	gtk_box_append(GTK_BOX(row), window->find_count);
 	gtk_box_append(GTK_BOX(row), create_find_button("go-up-symbolic", TEXT_FIND_PREVIOUS, G_CALLBACK(find_previous),

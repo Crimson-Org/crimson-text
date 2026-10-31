@@ -7,6 +7,11 @@
 #define MAXIMUM_DEFINITION_INDENT 3
 #define CONTINUATION_INDENT 4
 #define REFERENCE_OPEN "[^"
+#define REFERENCE_OPEN_LENGTH (sizeof REFERENCE_OPEN - 1)
+/* What ends a definition's label, as in [^note]: Text */
+#define DEFINITION_CLOSE_LENGTH (sizeof "]:" - 1)
+/* The shortest definition, such as [^a]: */
+#define SHORTEST_DEFINITION_LENGTH (REFERENCE_OPEN_LENGTH + 1 + DEFINITION_CLOSE_LENGTH)
 
 
 static void free_footnote(gpointer data) {
@@ -31,7 +36,7 @@ static gboolean is_fence(const char *line, gsize size) {
 	gsize indent = 0;
 	while (indent < size && indent <= MAXIMUM_DEFINITION_INDENT && line[indent] == ' ')
 		indent++;
-	return size - indent >= 3 && (strncmp(line + indent, "```", 3) == 0 || strncmp(line + indent, "~~~", 3) == 0);
+	return starts_code_fence(line + indent, size - indent);
 }
 
 
@@ -41,16 +46,17 @@ static gboolean read_definition(const char *line, gsize size, gsize *label_start
 	gsize position = 0;
 	while (position < size && position < MAXIMUM_DEFINITION_INDENT && line[position] == ' ')
 		position++;
-	if (size - position < 4 || strncmp(line + position, REFERENCE_OPEN, 2) != 0)
+	if (size - position < SHORTEST_DEFINITION_LENGTH
+		|| strncmp(line + position, REFERENCE_OPEN, REFERENCE_OPEN_LENGTH) != 0)
 		return FALSE;
-	gsize start = position + 2, end = start;
+	gsize start = position + REFERENCE_OPEN_LENGTH, end = start;
 	while (end < size && line[end] != ']' && !g_ascii_isspace(line[end]))
 		end++;
 	if (end == start || end + 1 >= size || line[end] != ']' || line[end + 1] != ':')
 		return FALSE;
 	*label_start = start;
 	*label_length = end - start;
-	*text_start = end + 2;
+	*text_start = end + DEFINITION_CLOSE_LENGTH;
 	return TRUE;
 }
 
@@ -124,10 +130,11 @@ static char *link_references(Footnotes *footnotes, Block *block, const char *mar
 	GString *linked = g_string_new(NULL);
 	const char *rest = markup;
 	for (const char *found = strstr(rest, REFERENCE_OPEN); found; found = strstr(rest, REFERENCE_OPEN)) {
-		const char *close = strchr(found + 2, ']');
-		Footnote *footnote = close ? find_footnote(footnotes, found + 2, close - found - 2) : NULL;
-		g_string_append_len(linked, rest, (footnote ? found : found + 2) - rest);
-		rest = footnote ? close + 1 : found + 2;
+		const char *label = found + REFERENCE_OPEN_LENGTH;
+		const char *close = strchr(label, ']');
+		Footnote *footnote = close ? find_footnote(footnotes, label, close - label) : NULL;
+		g_string_append_len(linked, rest, (footnote ? found : label) - rest);
+		rest = footnote ? close + 1 : label;
 		if (!footnote)
 			continue;
 		if (!footnote->number)

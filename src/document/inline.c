@@ -8,6 +8,16 @@
 
 #define MAXIMUM_ENTITY_BYTES 32
 #define MAXIMUM_TAG_NAME_BYTES 16
+/* Numbered entities such as &#65; and &#x41; */
+#define DECIMAL_ENTITY_OPEN_LENGTH (sizeof "&#" - 1)
+#define HEX_ENTITY_OPEN_LENGTH (sizeof "&#x" - 1)
+#define DECIMAL_BASE 10
+#define HEX_BASE 16
+/* The shortest tag that can name anything, such as <b>, and the opening of a closing tag such as </b> */
+#define SHORTEST_TAG_LENGTH (sizeof "<b>" - 1)
+#define CLOSING_TAG_OPEN_LENGTH (sizeof "</" - 1)
+#define COMMENT_OPEN "<!--"
+#define COMMENT_CLOSE "-->"
 
 /* HTML tags that map straight onto Pango markup */
 static const struct {
@@ -235,10 +245,12 @@ void write_highlighted_text(InlineWriter *writer, const char *text, gsize size) 
 
 
 void decode_entity(const char *entity, gsize size, GString *output) {
-	if (size > 3 && entity[1] == '#') {
-		gboolean is_hex = entity[2] == 'x' || entity[2] == 'X';
-		gunichar character = (gunichar)g_ascii_strtoull(entity + (is_hex ? 3 : 2), NULL, is_hex ? 16 : 10);
-		g_string_append_unichar(output, g_unichar_validate(character) && character ? character : 0xFFFD);
+	if (size > HEX_ENTITY_OPEN_LENGTH && entity[1] == '#') {
+		char marker = entity[DECIMAL_ENTITY_OPEN_LENGTH];
+		gboolean is_hex = marker == 'x' || marker == 'X';
+		gsize digits = is_hex ? HEX_ENTITY_OPEN_LENGTH : DECIMAL_ENTITY_OPEN_LENGTH;
+		gunichar character = (gunichar)g_ascii_strtoull(entity + digits, NULL, is_hex ? HEX_BASE : DECIMAL_BASE);
+		g_string_append_unichar(output, g_unichar_validate(character) && character ? character : REPLACEMENT_CHARACTER);
 		return;
 	}
 	const ENTITY *found = entity_lookup(entity, size);
@@ -336,11 +348,12 @@ static void write_html_link(InlineWriter *writer, const char *tag, gsize size) {
 
 
 void write_html_tag(InlineWriter *writer, const char *tag, gsize size) {
-	if (size < 3 || g_str_has_prefix(tag, "<!"))
+	if (size < SHORTEST_TAG_LENGTH || g_str_has_prefix(tag, "<!"))
 		return;
 	gboolean is_closing = tag[1] == '/';
 	char name[MAXIMUM_TAG_NAME_BYTES] = {0};
-	for (gsize index = is_closing ? 2 : 1, length = 0; index < size && length + 1 < sizeof name; index++) {
+	gsize name_start = is_closing ? CLOSING_TAG_OPEN_LENGTH : 1;
+	for (gsize index = name_start, length = 0; index < size && length + 1 < sizeof name; index++) {
 		if (!g_ascii_isalnum(tag[index]))
 			break;
 		name[length++] = g_ascii_tolower(tag[index]);
@@ -380,9 +393,10 @@ void write_html_tag(InlineWriter *writer, const char *tag, gsize size) {
 void write_html(InlineWriter *writer, const char *html, gsize size) {
 	gsize index = 0;
 	while (index < size) {
-		if (html[index] == '<' && index + 3 < size && strncmp(html + index, "<!--", 4) == 0) {
-			const char *end = g_strstr_len(html + index, size - index, "-->");
-			index = end ? (gsize)(end - html) + 3 : size;
+		if (html[index] == '<' && index + strlen(COMMENT_OPEN) <= size
+			&& strncmp(html + index, COMMENT_OPEN, strlen(COMMENT_OPEN)) == 0) {
+			const char *end = g_strstr_len(html + index, size - index, COMMENT_CLOSE);
+			index = end ? (gsize)(end - html) + strlen(COMMENT_CLOSE) : size;
 			continue;
 		}
 		if (html[index] == '<') {

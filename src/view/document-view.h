@@ -9,6 +9,8 @@
 #define LIST_GAP 6
 /* Room around the text of a code block inside its background */
 #define CODE_PADDING 16
+/* Smaller text, such as small print, task counts and table notes */
+#define SMALL_SCALE 0.833
 /* Separates lines inside one paragraph, so the paragraph is one line of the buffer with one gap below */
 #define LINE_SEPARATOR "\u2028"
 

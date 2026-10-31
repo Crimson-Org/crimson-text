@@ -8,6 +8,14 @@
 #define JSON_INDENT "  "
 /* A JSON file whose lines average longer than this is laid out before showing */
 #define MINIFIED_LINE_BYTES 300
+/* A task such as - [x] Title: an optional bullet and space, then the box with its mark in the middle */
+#define TASK_BULLET_LENGTH 2
+#define TASK_BOX_LENGTH 3
+#define TASK_MARK_OFFSET 1
+/* Lines that are not tasks become headings at this level, above the tasks that follow */
+#define TASK_GROUP_HEADING_LEVEL 3
+/* A file reads as a task list once it holds at least this many tasks, making up half its lines or more */
+#define MINIMUM_TASK_COUNT 2
 
 
 /* Reads the leading indentation in levels, counting a tab or four spaces as one */
@@ -24,12 +32,14 @@ static int get_indent_depth(const char *line, const char **text) {
 /* Recognises [ ] and [x] tasks, optionally after a list bullet, and points at the mark between the brackets */
 static gboolean read_task(const char *text, gboolean *is_done, const char **title, const char **mark) {
 	if ((*text == '-' || *text == '*') && text[1] == ' ')
-		text += 2;
-	if (text[0] != '[' || (text[1] != ' ' && text[1] != 'x' && text[1] != 'X') || text[2] != ']')
+		text += TASK_BULLET_LENGTH;
+	char mark_character = text[TASK_MARK_OFFSET];
+	if (text[0] != '[' || (mark_character != ' ' && mark_character != 'x' && mark_character != 'X')
+		|| text[TASK_BOX_LENGTH - 1] != ']')
 		return FALSE;
-	*is_done = text[1] != ' ';
-	*mark = text + 1;
-	*title = text[3] == ' ' ? text + 4 : text + 3;
+	*is_done = mark_character != ' ';
+	*mark = text + TASK_MARK_OFFSET;
+	*title = text + TASK_BOX_LENGTH + (text[TASK_BOX_LENGTH] == ' ');
 	return TRUE;
 }
 
@@ -47,7 +57,7 @@ gboolean looks_like_tasks(const char *text, gsize length) {
 		line_count++;
 		task_count += read_task(content, &is_done, &title, &mark);
 	}
-	return task_count >= 2 && task_count * 2 >= line_count;
+	return task_count >= MINIMUM_TASK_COUNT && task_count * 2 >= line_count;
 }
 
 
@@ -94,7 +104,7 @@ void split_tasks(const char *text, gsize length, BlockReady ready, gpointer data
 			finish_task_group(&heading, &top_list, done, total, ready, data);
 			done = total = 0;
 			heading = create_block(BLOCK_HEADING);
-			heading->level = 3;
+			heading->level = TASK_GROUP_HEADING_LEVEL;
 			heading->line = index + 1;
 			heading->text = g_strdup(content);
 			add_text_piece(heading, content);

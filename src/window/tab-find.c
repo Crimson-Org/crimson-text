@@ -6,6 +6,10 @@
 #include "window/tab-find.h"
 
 #define FIND_TAG "find-match"
+/* A match scrolled into view sits this far down the page */
+#define MATCH_VIEW_POSITION (1 / 3.0)
+/* Room kept around the selected match in the editor, as a share of the view */
+#define EDITOR_MATCH_MARGIN 0.1
 /* The search match colours of the Adwaita style scheme the editor uses */
 #define FIND_BACKGROUND "#f8e45c"
 #define FIND_FOREGROUND "#3d3846"
@@ -196,7 +200,7 @@ static int find_in_view(Tab *tab, const char *query, FindDirection direction, in
 	gtk_text_view_get_visible_rect(GTK_TEXT_VIEW(tab->content), &visible);
 	if (y < visible.y || y + height > visible.y + visible.height) {
 		GtkAdjustment *adjustment = gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(tab->scroller));
-		double value = y + gtk_adjustment_get_value(adjustment) - visible.y - visible.height / 3.0;
+		double value = y + gtk_adjustment_get_value(adjustment) - visible.y - visible.height * MATCH_VIEW_POSITION;
 		glide_scroller(GTK_SCROLLED_WINDOW(tab->scroller), value, FIND_GLIDE_DURATION);
 	}
 	return current + 1;
@@ -247,8 +251,8 @@ static int find_in_editor(Tab *tab, const char *query, FindDirection direction, 
 		return 0;
 	if (direction != FIND_SAME) {
 		gtk_text_buffer_select_range(buffer, &match_start, &match_end);
-		gtk_text_view_scroll_to_mark(GTK_TEXT_VIEW(tab->editor), gtk_text_buffer_get_insert(buffer), 0.1, FALSE, 0,
-			0);
+		GtkTextMark *cursor = gtk_text_buffer_get_insert(buffer);
+		gtk_text_view_scroll_to_mark(GTK_TEXT_VIEW(tab->editor), cursor, EDITOR_MATCH_MARGIN, FALSE, 0, 0);
 	}
 	return MAX(gtk_source_search_context_get_occurrence_position(search, &match_start, &match_end), 0);
 }

@@ -26,6 +26,8 @@
 #define DEFAULT_ZOOM 100
 #define CODE_RADIUS 8
 #define CODE_ALPHA 0.06
+/* The first two heading levels get a line under them, as GitHub draws them */
+#define BORDERED_HEADING_COUNT 2
 /* Marks a spacing value a tag leaves to the tags below it */
 #define UNSET_SPACING (-1)
 
@@ -71,7 +73,7 @@ static GList *live_views;
 
 
 static int scale_size(int size) {
-	return (int)lround(size * document_zoom / 100.0);
+	return (int)lround(size * document_zoom / (double)DEFAULT_ZOOM);
 }
 
 
@@ -112,8 +114,9 @@ static void create_fixed_tags(GtkTextBuffer *buffer) {
 	set_spacing(gtk_text_buffer_create_tag(buffer, "gap-large", NULL), BLOCK_GAP, UNSET_SPACING, 0);
 	for (guint index = 0; index < G_N_ELEMENTS(HEADINGS); index++) {
 		g_autofree char *name = g_strdup_printf("h%u", index + 1);
-		GtkTextTag *tag = gtk_text_buffer_create_tag(buffer, name, "scale", HEADINGS[index].scale, "weight", 600, NULL);
-		gboolean has_border = index < 2;
+		GtkTextTag *tag = gtk_text_buffer_create_tag(buffer, name, "scale", HEADINGS[index].scale,
+			"weight", PANGO_WEIGHT_SEMIBOLD, NULL);
+		gboolean has_border = index < BORDERED_HEADING_COUNT;
 		set_spacing(tag, has_border ? BLOCK_GAP + BORDER_SPACE : BLOCK_GAP, HEADINGS[index].space_above, 0);
 		if (has_border)
 			set_decoration(tag, DECORATION_BORDER);
@@ -121,14 +124,15 @@ static void create_fixed_tags(GtkTextBuffer *buffer) {
 	gtk_text_buffer_create_tag(buffer, "centered", "justification", GTK_JUSTIFY_CENTER, NULL);
 	gtk_text_buffer_create_tag(buffer, "quote", NULL);
 	gtk_text_buffer_create_tag(buffer, "dimmed", NULL);
-	gtk_text_buffer_create_tag(buffer, "task-count", "scale", 0.833, "weight", 400, NULL);
+	gtk_text_buffer_create_tag(buffer, "task-count", "scale", SMALL_SCALE, "weight", PANGO_WEIGHT_NORMAL, NULL);
 	set_decoration(gtk_text_buffer_create_tag(buffer, "rule", NULL), DECORATION_RULE);
 	gtk_text_buffer_create_tag(buffer, "link", "underline", PANGO_UNDERLINE_SINGLE, NULL);
 	for (guint index = 0; index < G_N_ELEMENTS(ALERT_COLORS); index++) {
 		g_autofree char *name = g_strconcat("alert-title-", ALERT_COLORS[index].family, NULL);
-		gtk_text_buffer_create_tag(buffer, name, "foreground", ALERT_COLORS[index].color, "weight", 600, NULL);
+		gtk_text_buffer_create_tag(buffer, name, "foreground", ALERT_COLORS[index].color,
+			"weight", PANGO_WEIGHT_SEMIBOLD, NULL);
 	}
-	gtk_text_buffer_create_tag(buffer, "alert-title-quiet", "weight", 600, NULL);
+	gtk_text_buffer_create_tag(buffer, "alert-title-quiet", "weight", PANGO_WEIGHT_SEMIBOLD, NULL);
 	GtkTextTag *code = gtk_text_buffer_create_tag(buffer, "code", "family", "monospace", "wrap-mode", GTK_WRAP_CHAR,
 		NULL);
 	g_object_set_data(G_OBJECT(code), "right-padding", GINT_TO_POINTER(CODE_PADDING));
