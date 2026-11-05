@@ -386,8 +386,9 @@ static void close_current(GSimpleAction *action, GVariant *parameter, gpointer d
 }
 
 
-static void open_dropped_file(GFile *file, gpointer window) {
-	open_window_file(window, file);
+static void open_dropped_files(GFile **files, guint count, gpointer window) {
+	for (guint index = 0; index < count; index++)
+		open_window_file(window, files[index]);
 }
 
 
@@ -593,7 +594,7 @@ Window *create_window(GtkApplication *application) {
 	adw_application_window_add_breakpoint(ADW_APPLICATION_WINDOW(window->window), breakpoint);
 	add_actions(window);
 	add_mouse_navigation(window->window, "win.back", "win.forward");
-	add_file_drop(window->window, open_dropped_file, window);
+	add_file_drop(window->window, open_dropped_files, window);
 	g_signal_connect(window->window, "close-request", G_CALLBACK(close_window), window);
 	update_window(window);
 	return window;
