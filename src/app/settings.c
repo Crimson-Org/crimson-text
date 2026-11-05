@@ -1,6 +1,6 @@
 #include <gtk/gtk.h>
 
-#include "common/key-store.h"
+#include "common/storage/key-store.h"
 #include "view/document-view.h"
 #include "app/settings.h"
 
@@ -56,8 +56,10 @@ void apply_settings(void) {
 		gtk_style_context_add_provider_for_display(gdk_display_get_default(), GTK_STYLE_PROVIDER(style),
 			GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 1);
 	}
-	g_autofree char *family = *current->editor_font
-		? g_strdup_printf(" font-family: \"%s\";", current->editor_font) : g_strdup("");
+	/* The family goes into a quoted style rule, so quotes and backslashes in a name, such as one typed into the
+	 * settings file, are left out */
+	g_autofree char *safe = g_strdelimit(g_strdup(current->editor_font), "\"\\", ' ');
+	g_autofree char *family = *g_strstrip(safe) ? g_strdup_printf(" font-family: \"%s\";", safe) : g_strdup("");
 	int reading = current->reading_size * READING_BASE_SIZE / 100;
 	int editor = current->editor_size * EDITOR_BASE_SIZE / 100;
 	g_autofree char *css = g_strdup_printf(

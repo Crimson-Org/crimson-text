@@ -2,7 +2,7 @@
 <component type="desktop-application">
 	<id>io.github.CrimsonOrg.CrimsonText</id>
 	<name>Crimson Text</name>
-	<summary>View and edit text files beautifully</summary>
+	<summary>View and edit Markdown, code and text files</summary>
 	<metadata_license>CC0-1.0</metadata_license>
 	<project_license>LicenseRef-proprietary</project_license>
 	<description>

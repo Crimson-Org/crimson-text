@@ -51,10 +51,7 @@ static GtkWidget *create_pencil_row(void) {
 static void choose_font(GtkFontDialogButton *button, GParamSpec *property, gpointer data) {
 	PangoFontDescription *font = gtk_font_dialog_button_get_font_desc(button);
 	const char *family = font ? pango_font_description_get_family(font) : NULL;
-	/* The family goes into a quoted style rule, so quotes and backslashes in a name are left out */
-	g_autofree char *safe = g_strdup(family && g_strcmp0(family, SYSTEM_MONOSPACE) != 0 ? family : "");
-	g_strdelimit(safe, "\"\\", ' ');
-	g_set_str(&get_settings()->editor_font, g_strstrip(safe));
+	g_set_str(&get_settings()->editor_font, family && g_strcmp0(family, SYSTEM_MONOSPACE) != 0 ? family : "");
 	store_settings();
 }
 

@@ -48,10 +48,18 @@ struct Tab {
 	GFile *file;
 	GFileMonitor *monitor;
 	GCancellable *file_cancellable;
+	/* The one reload from disk under way, replaced by each newer change on disk */
+	GCancellable *reload_cancellable;
 	/* Text that is rendered, text last read from or written to disk, and the file version it came from */
 	char *source, *disk_text, *etag;
+	/* The text a save is writing, which becomes the disk text once the write succeeds */
+	char *saving_text;
+	/* A save asked for while another runs waits for it, so both never use the same etag */
+	gboolean is_saving, is_save_wanted;
 	/* Charset the file is saved in, or nothing for UTF-8 */
 	char *charset;
+	/* The language the text showed, for files whose name does not tell */
+	char *language;
 	/* The shown content's context, and the one filled while changed content renders off screen */
 	RenderContext context, next_context;
 	/* Saving would not give back the file exactly, so it is shown without editing */
@@ -64,8 +72,8 @@ struct Tab {
 	Stream *stream;
 	/* Source line the view should show once its content is laid out */
 	int pending_line;
-	/* Tick callbacks waiting for layout before moving the view or the editor */
-	guint landing_handler, editor_landing_handler;
+	/* Waits on the scroll range of the view or the editor until a move can land */
+	gulong landing_handler, editor_landing_handler;
 	/* Earlier and later places for the back and forward buttons */
 	GArray *back_places, *forward_places;
 	/* Number of the selected search match in the view, and the buffer where it is marked */

@@ -1,6 +1,7 @@
-// Saving this file writes each task as a .sh script for Linux and macOS and a .cmd script for
+// crimson-build writes each task as a .sh script for Linux and macOS and a .cmd script for
 // Windows in this folder, and those scripts run anywhere without Crimson Build.
 {
+	"systems": ["unix"],
 	"env": {
 		"PROGRAM": "crimson-text",
 		"APPLICATION_ID": "io.github.CrimsonOrg.CrimsonText",
@@ -9,25 +10,29 @@
 		"STD": "c11",
 		"WARN": "-Wall -Wextra -Wpedantic -Werror -Wno-unused-parameter",
 		"OPT": "-O2 -g",
-		"PKGS": "gtk4 libadwaita-1 gtksourceview-5 libcurl glycin-2",
+		"GTK_MINOR": "16",
+		"ADWAITA_MINOR": "7",
+		"SOURCE_VIEW_MINOR": "12",
+		"PKGS": "gtk4 >= 4.${GTK_MINOR} libadwaita-1 >= 1.${ADWAITA_MINOR} gtksourceview-5 >= 5.${SOURCE_VIEW_MINOR} libcurl glycin-2",
 		"LIBS": "-lm",
-		"DEFINES": "-DAPPLICATION_VERSION=\"${VERSION}\"",
+		"DEFINES": "-DAPPLICATION_VERSION=\"${VERSION}\" -DGDK_VERSION_MIN_REQUIRED=GDK_VERSION_4_${GTK_MINOR} -DGDK_VERSION_MAX_ALLOWED=GDK_VERSION_4_${GTK_MINOR} -DADW_VERSION_MIN_REQUIRED=ADW_VERSION_1_${ADWAITA_MINOR} -DADW_VERSION_MAX_ALLOWED=ADW_VERSION_1_${ADWAITA_MINOR} -DGTK_SOURCE_VERSION_MIN_REQUIRED=GTK_SOURCE_VERSION_5_${SOURCE_VIEW_MINOR} -DGTK_SOURCE_VERSION_MAX_ALLOWED=GTK_SOURCE_VERSION_5_${SOURCE_VIEW_MINOR}",
 		"INCLUDES": "-Isrc -Isubprojects/crimson-core/src",
+		"HEADERS": "src/*/*.h subprojects/crimson-core/src/*/*.h subprojects/crimson-core/src/*/*/*.h",
 		"EXTRA_LICENSES": "md4c=src/md4c/LICENSE"
 	},
 	"tasks": {
 		"build": {
 			"description": "Build Crimson Text into the project folder",
 			"steps": [
-				{"needs": ["cc", "make", "pkg-config", "glib-compile-resources"]},
-				{"pkg": ["gtk4 >= 4.14", "libadwaita-1 >= 1.8", "gtksourceview-5", "libcurl", "glycin-2"]},
+				{"needs": ["cc", "pkg-config", "glib-compile-resources"]},
+				{"pkg": "${PKGS}"},
 				{"mkdir": ["build/obj"]},
 				"glib-compile-resources --sourcedir assets --target build/resources.c --generate-source assets/crimson-text.gresource.xml",
-				{"each": {"from": "src/*.c src/app/*.c src/document/*.c src/editor/*.c src/view/*.c src/window/*.c", "to": "build/obj/{id}.o", "run": "cc -std=${STD} $WARN $OPT $DEFINES $INCLUDES $(pkg-config --cflags $PKGS | sed \"s/-I/-isystem /g\") -c {from} -o {to}", "also": ["src/*/*.h", "subprojects/crimson-core/src/common/*.h", "subprojects/crimson-build/src/build/*.h"]}},
-				{"each": {"from": "subprojects/crimson-core/src/common/*.c", "to": "build/obj/{id}.o", "run": "cc -std=${STD} $WARN $OPT $DEFINES $INCLUDES $(pkg-config --cflags $PKGS | sed \"s/-I/-isystem /g\") -c {from} -o {to}", "also": ["src/*/*.h", "subprojects/crimson-core/src/common/*.h", "subprojects/crimson-build/src/build/*.h"]}},
-				{"each": {"from": "src/md4c/*.c", "to": "build/obj/{id}.o", "run": "cc -std=gnu11 -O2 -g -w -c {from} -o {to}", "also": ["src/*/*.h", "subprojects/crimson-core/src/common/*.h", "subprojects/crimson-build/src/build/*.h"]}},
-				"cc -std=gnu11 -O2 -g $(pkg-config --cflags gio-2.0) -c build/resources.c -o build/obj/resources.o",
-				"cc -o build/${PROGRAM} build/obj/*.o $(pkg-config --libs $PKGS) $LIBS",
+				"glib-compile-resources --sourcedir subprojects/crimson-core/assets --target build/core-resources.c --generate-source subprojects/crimson-core/assets/crimson-core.gresource.xml",
+				{"each": {"from": "src/*.c src/app/*.c src/document/*.c src/editor/*.c src/view/*.c src/window/*.c subprojects/crimson-core/src/common/*/*.c subprojects/crimson-core/src/source/*.c", "to": "build/obj/{id}.o", "run": "cc -std=${STD} $WARN $OPT $DEFINES $INCLUDES $(pkg-config --cflags \"$PKGS\" | sed \"s/-I/-isystem /g\") -c {from} -o {to}", "also": "${HEADERS}"}},
+				{"each": {"from": "src/md4c/*.c", "to": "build/obj/{id}.o", "run": "cc -std=gnu11 $OPT -w -c {from} -o {to}", "also": "src/md4c/*.h"}},
+				{"each": {"from": "build/resources.c build/core-resources.c", "to": "build/obj/{id}.o", "run": "cc -std=gnu11 $OPT $(pkg-config --cflags gio-2.0) -c {from} -o {to}"}},
+				"cc -o build/${PROGRAM} build/obj/*.o $(pkg-config --libs \"$PKGS\") $LIBS",
 				{"copy": {"from": "build/${PROGRAM}", "to": ".${PROGRAM}.new"}},
 				{"move": {"from": ".${PROGRAM}.new", "to": "${PROGRAM}"}},
 				{"mkdir": ["logs"]}
@@ -44,29 +49,20 @@
 			"description": "Install Crimson Text for the current user",
 			"depends": "build",
 			"steps": [
-				"install -Dm755 build/${PROGRAM} ${PREFIX}/bin/${PROGRAM}",
-				"mkdir -p ${PREFIX}/share/applications && for desktop in assets/${APPLICATION_ID}*.desktop.in; do sed \"s|@EXEC@|${PREFIX}/bin/${PROGRAM}|\" \"$desktop\" > \"${PREFIX}/share/applications/$(basename \"$desktop\" .in)\"; done",
-				"install -Dm644 assets/icons/scalable/apps/${APPLICATION_ID}.svg ${PREFIX}/share/icons/hicolor/scalable/apps/${APPLICATION_ID}.svg",
-				"install -Dm644 assets/${APPLICATION_ID}.metainfo.xml ${PREFIX}/share/metainfo/${APPLICATION_ID}.metainfo.xml",
-				"update-desktop-database ${PREFIX}/share/applications >/dev/null 2>&1 || true",
-				"gtk-update-icon-cache --quiet --ignore-theme-index ${PREFIX}/share/icons/hicolor >/dev/null 2>&1 || true"
+				"sh subprojects/crimson-core/scripts/install.sh"
 			]
 		},
 		"install-default": {
 			"description": "Install Crimson Text and make it the default for text files",
 			"depends": "install",
 			"steps": [
-				"sh .crimson-build/make-default.sh"
+				"sh scripts/make-default.sh"
 			]
 		},
 		"uninstall": {
 			"description": "Remove Crimson Text from the current user",
 			"steps": [
-				{"remove": "${PREFIX}/bin/${PROGRAM}"},
-				{"remove": "${PREFIX}/share/applications/${APPLICATION_ID}.desktop"},
-				{"remove": "${PREFIX}/share/applications/${APPLICATION_ID}.Edit.desktop"},
-				{"remove": "${PREFIX}/share/icons/hicolor/scalable/apps/${APPLICATION_ID}.svg"},
-				{"remove": "${PREFIX}/share/metainfo/${APPLICATION_ID}.metainfo.xml"}
+				"sh subprojects/crimson-core/scripts/uninstall.sh"
 			]
 		},
 		"archive": {

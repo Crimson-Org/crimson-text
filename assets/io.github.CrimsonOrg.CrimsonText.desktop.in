@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
 Name=Crimson Text
-Comment=View and edit text files beautifully
+Comment=View and edit Markdown, code and text files
 Exec=env GNUTLS_NO_IMPLICIT_INIT=1 @EXEC@ %U
 Icon=io.github.CrimsonOrg.CrimsonText
 Terminal=false

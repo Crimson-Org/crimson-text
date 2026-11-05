@@ -10,5 +10,3 @@ void prepare_source_view(GtkSourceView *view, const char *file_name, const char 
 typedef void (*CodeRunFound)(int start, int end, GtkTextTag *tag, gpointer data);
 
 void highlight_code(const char *text, const char *language, CodeRunFound found, gpointer data);
-/* Numbers the gutter by the file's lines, leaving the later pieces of a split line blank */
-void show_file_line_numbers(GtkSourceView *view);

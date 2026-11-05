@@ -1,7 +1,7 @@
 #include "lang/en.h"
 #include "window/tab-find.h"
 #include "window/window-private.h"
-#include "common/spacing.h"
+#include "common/widgets/spacing.h"
 
 #define FIND_BAR_WIDTH 600
 

@@ -2,19 +2,13 @@
 
 #include <adwaita.h>
 
-#include "common/long-lines.h"
+#include "common/text/long-lines.h"
+#include "source/split-lines.h"
 #include "view/document-view.h"
 #include "editor/source-view.h"
 
 #define LIGHT_SCHEME "Adwaita"
 #define DARK_SCHEME "Adwaita-dark"
-#define TAB_WIDTH 4
-#define SPLIT_WATCH "split-watch"
-#define MINIMUM_NUMBER_DIGITS 2
-#define NUMBER_PADDING_PIXELS 6
-/* Room for a line number of any size a file can have */
-#define LINE_LABEL_BYTES 16
-#define DECIMAL_BASE 10
 
 /* A source view that also draws the landing flash under its text, as the reading view does */
 struct _FlashingSourceView {
@@ -104,115 +98,14 @@ static void flashing_source_view_init(FlashingSourceView *view) {
 }
 
 
-/* GtkSourceView's parser spends seconds on each split line even with colours off, so a document with one loses
- * its language, as minified code gains little from colours */
-static void notice_split_lines(GtkTextBuffer *buffer, GtkTextIter *end, char *text, int length, gpointer data) {
-	if (!has_split_lines(buffer))
-		return;
-	gtk_source_buffer_set_language(GTK_SOURCE_BUFFER(buffer), NULL);
-	gtk_source_buffer_set_highlight_matching_brackets(GTK_SOURCE_BUFFER(buffer), FALSE);
-	g_signal_handlers_disconnect_by_data(buffer, SPLIT_WATCH);
-}
-
-
-/* Line numbers by the file's own lines, so the later pieces of a split line show none */
-struct _FileLineNumbers {
-	GtkSourceGutterRendererText parent_instance;
-	int digits;
-};
-
-#define FILE_LINE_NUMBERS_TYPE (file_line_numbers_get_type())
-G_DECLARE_FINAL_TYPE(FileLineNumbers, file_line_numbers, CRIMSON, FILE_LINE_NUMBERS, GtkSourceGutterRendererText)
-G_DEFINE_FINAL_TYPE(FileLineNumbers, file_line_numbers, GTK_SOURCE_TYPE_GUTTER_RENDERER_TEXT)
-
-
-static void file_line_numbers_query_data(GtkSourceGutterRenderer *renderer, GtkSourceGutterLines *lines,
-	guint line) {
-	GtkTextBuffer *buffer = GTK_TEXT_BUFFER(gtk_source_gutter_renderer_get_buffer(renderer));
-	char label[LINE_LABEL_BYTES] = "";
-	GtkTextIter iter;
-	gtk_text_buffer_get_iter_at_line(buffer, &iter, (int)line);
-	if (!has_split_lines(buffer))
-		g_snprintf(label, sizeof label, "%u", line + 1);
-	else if (!continues_split_line(&iter))
-		g_snprintf(label, sizeof label, "%d", get_joined_line(buffer, (int)line) + 1);
-	gtk_source_gutter_renderer_text_set_text(GTK_SOURCE_GUTTER_RENDERER_TEXT(renderer), label, -1);
-}
-
-
-static int count_number_digits(FileLineNumbers *numbers) {
-	GtkSourceBuffer *buffer = gtk_source_gutter_renderer_get_buffer(GTK_SOURCE_GUTTER_RENDERER(numbers));
-	int digits = 0;
-	int lines = buffer ? gtk_text_buffer_get_line_count(GTK_TEXT_BUFFER(buffer)) : 1;
-	for (int count = lines; count > 0; count /= DECIMAL_BASE)
-		digits++;
-	return MAX(digits, MINIMUM_NUMBER_DIGITS);
-}
-
-
-static void file_line_numbers_measure(GtkWidget *widget, GtkOrientation orientation, int for_size, int *minimum,
-	int *natural, int *minimum_baseline, int *natural_baseline) {
-	*minimum_baseline = *natural_baseline = -1;
-	*minimum = *natural = 0;
-	if (orientation == GTK_ORIENTATION_VERTICAL)
-		return;
-	FileLineNumbers *numbers = CRIMSON_FILE_LINE_NUMBERS(widget);
-	numbers->digits = count_number_digits(numbers);
-	g_autofree char *sample = g_strnfill(numbers->digits, '0');
-	int width = 0;
-	gtk_source_gutter_renderer_text_measure(GTK_SOURCE_GUTTER_RENDERER_TEXT(widget), sample, &width, NULL);
-	*minimum = *natural = width + 2 * gtk_source_gutter_renderer_get_xpad(GTK_SOURCE_GUTTER_RENDERER(widget));
-}
-
-
-/* Asks for a new width only when the line count gains or loses a digit */
-static void notice_line_count(GtkTextBuffer *buffer, FileLineNumbers *numbers) {
-	if (count_number_digits(numbers) != numbers->digits)
-		gtk_widget_queue_resize(GTK_WIDGET(numbers));
-}
-
-
-static void file_line_numbers_change_buffer(GtkSourceGutterRenderer *renderer, GtkSourceBuffer *old_buffer) {
-	if (old_buffer)
-		g_signal_handlers_disconnect_by_data(old_buffer, renderer);
-	GtkSourceBuffer *buffer = gtk_source_gutter_renderer_get_buffer(renderer);
-	if (buffer)
-		g_signal_connect_object(buffer, "changed", G_CALLBACK(notice_line_count), renderer, 0);
-	GTK_SOURCE_GUTTER_RENDERER_CLASS(file_line_numbers_parent_class)->change_buffer(renderer, old_buffer);
-	gtk_widget_queue_resize(GTK_WIDGET(renderer));
-}
-
-
-static void file_line_numbers_class_init(FileLineNumbersClass *class) {
-	GTK_WIDGET_CLASS(class)->measure = file_line_numbers_measure;
-	GTK_SOURCE_GUTTER_RENDERER_CLASS(class)->query_data = file_line_numbers_query_data;
-	GTK_SOURCE_GUTTER_RENDERER_CLASS(class)->change_buffer = file_line_numbers_change_buffer;
-}
-
-
-static void file_line_numbers_init(FileLineNumbers *numbers) {
-	gtk_source_gutter_renderer_set_xalign(GTK_SOURCE_GUTTER_RENDERER(numbers), 1.0);
-	gtk_source_gutter_renderer_set_xpad(GTK_SOURCE_GUTTER_RENDERER(numbers), NUMBER_PADDING_PIXELS);
-}
-
-
-void show_file_line_numbers(GtkSourceView *view) {
-	if (g_object_get_data(G_OBJECT(view), "file-line-numbers"))
-		return;
-	GtkSourceGutterRenderer *numbers = g_object_new(FILE_LINE_NUMBERS_TYPE, NULL);
-	g_object_set_data(G_OBJECT(view), "file-line-numbers", numbers);
-	gtk_source_gutter_insert(gtk_source_view_get_gutter(view, GTK_TEXT_WINDOW_LEFT), numbers, 0);
-}
-
-
 /* A source view with the shared tab width and monospace font, without colours until it is prepared */
 GtkWidget *create_source_view(void) {
 	GtkWidget *view = g_object_new(FLASHING_SOURCE_VIEW_TYPE, NULL);
-	gtk_source_view_set_tab_width(GTK_SOURCE_VIEW(view), TAB_WIDTH);
+	gtk_source_view_set_tab_width(GTK_SOURCE_VIEW(view), CODE_TAB_WIDTH);
 	gtk_text_view_set_monospace(GTK_TEXT_VIEW(view), TRUE);
 	GtkTextBuffer *buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(view));
 	split_long_lines(buffer);
-	g_signal_connect_after(buffer, "insert-text", G_CALLBACK(notice_split_lines), SPLIT_WATCH);
+	keep_split_lines_plain(GTK_SOURCE_BUFFER(buffer));
 	join_long_line_copies(GTK_TEXT_VIEW(view));
 	return view;
 }

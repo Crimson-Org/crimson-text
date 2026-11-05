@@ -2,7 +2,7 @@
 
 #include <adwaita.h>
 
-#include "common/long-lines.h"
+#include "common/text/long-lines.h"
 #include "view/document-view.h"
 
 #define TOP_MARGIN 36
@@ -67,6 +67,8 @@ static const struct {
 	{"note", "#3584e4"}, {"tip", "#2ec27e"}, {"important", "#9141ac"}, {"warning", "#e5a50a"},
 	{"caution", "#e01b24"},
 };
+
+#define CODE_TAB_KEY "code-tab-width"
 
 static int document_zoom = DEFAULT_ZOOM;
 static GList *live_views;
@@ -174,9 +176,37 @@ static void scale_indent_tag(GtkTextTag *tag) {
 }
 
 
+static void scale_code_tabs(GtkTextTag *tag) {
+	int width = scale_size(GPOINTER_TO_INT(g_object_get_data(G_OBJECT(tag), CODE_TAB_KEY)));
+	PangoTabArray *tabs = pango_tab_array_new_with_positions(1, TRUE, PANGO_TAB_LEFT, MAX(width, 1));
+	g_object_set(tag, "tabs", tabs, NULL);
+	pango_tab_array_free(tabs);
+}
+
+
+/* The width is measured once and kept unzoomed, so the stops follow the text size by hand, as indents do */
+void set_code_tab_stops(GtkTextView *view, GtkTextTag *code) {
+	if (g_object_get_data(G_OBJECT(code), CODE_TAB_KEY))
+		return;
+	g_autofree char *spaces = g_strnfill(CODE_TAB_WIDTH, ' ');
+	PangoLayout *layout = gtk_widget_create_pango_layout(GTK_WIDGET(view), spaces);
+	PangoFontDescription *font = pango_font_description_from_string("monospace");
+	pango_layout_set_font_description(layout, font);
+	int width = 0;
+	pango_layout_get_pixel_size(layout, &width, NULL);
+	pango_font_description_free(font);
+	g_object_unref(layout);
+	int unzoomed = (int)lround(width * DEFAULT_ZOOM / (double)document_zoom);
+	g_object_set_data(G_OBJECT(code), CODE_TAB_KEY, GINT_TO_POINTER(MAX(unzoomed, 1)));
+	scale_code_tabs(code);
+}
+
+
 static void scale_tag(GtkTextTag *tag, gpointer data) {
 	if (g_object_get_data(G_OBJECT(tag), "indent-left"))
 		scale_indent_tag(tag);
+	if (g_object_get_data(G_OBJECT(tag), CODE_TAB_KEY))
+		scale_code_tabs(tag);
 	if (g_object_get_data(G_OBJECT(tag), "spacing"))
 		scale_spacing_tag(tag);
 }

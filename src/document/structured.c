@@ -3,6 +3,8 @@
 #include "document/parse.h"
 
 #define TASK_INDENT_SPACES 4
+/* Characters a blank line may hold */
+#define LINE_SPACE " \t\r"
 #define MAXIMUM_TASK_DEPTH 8
 #define TABLE_BATCH_ROWS 500
 #define JSON_INDENT "  "
@@ -52,7 +54,8 @@ gboolean looks_like_tasks(const char *text, gsize length) {
 		const char *content = NULL, *title = NULL, *mark = NULL;
 		gboolean is_done = FALSE;
 		get_indent_depth(lines[index], &content);
-		if (!*g_strstrip(lines[index]))
+		/* Blank lines count for nothing, and the line itself stays in place, since the content points into it */
+		if (!content[strspn(content, LINE_SPACE)])
 			continue;
 		line_count++;
 		task_count += read_task(content, &is_done, &title, &mark);

@@ -1,8 +1,10 @@
 #include <string.h>
 
 #include "lang/en.h"
-#include "common/log.h"
-#include "common/startup.h"
+#include "common/app/log.h"
+#include "common/app/startup.h"
+#include "common/window/file-drop.h"
+#include "common/window/navigation.h"
 #include "app/launch.h"
 #include "view/outline-list.h"
 #include "document/parse.h"
@@ -14,10 +16,8 @@
 #define SIDEBAR_MINIMUM_WIDTH 200
 #define SIDEBAR_MAXIMUM_WIDTH 300
 #define NARROW_CONDITION "max-width: 640sp"
-#define BACK_BUTTON 8
 /* Put before the title of a document with unsaved changes */
-#define MODIFIED_MARK "\u2022 "
-#define FORWARD_BUTTON 9
+#define MODIFIED_MARK "* "
 
 
 
@@ -92,8 +92,11 @@ static void update_window(Window *window) {
 		g_autofree char *name = get_tab_title(tab);
 		g_autofree char *title = is_tab_modified(tab) ? g_strconcat(MODIFIED_MARK, name, NULL) : g_strdup(name);
 		g_autofree char *directory = get_display_directory(tab->file);
+		/* A file that cannot be edited says so where its place is shown, so the state is never only a toast */
+		g_autofree char *place = tab->is_read_only ? g_strdup_printf(TEXT_READ_ONLY_FOLDER, directory)
+			: g_strdup(directory);
 		adw_window_title_set_title(ADW_WINDOW_TITLE(window->title), title);
-		adw_window_title_set_subtitle(ADW_WINDOW_TITLE(window->title), directory);
+		adw_window_title_set_subtitle(ADW_WINDOW_TITLE(window->title), place);
 	}
 	update_outline(window);
 }
@@ -154,40 +157,6 @@ static void finish_link_question(GObject *dialog, GAsyncResult *result, gpointer
 }
 
 
-/* A local link waiting to learn whether its target exists */
-typedef struct {
-	Window *window;
-	GFile *file;
-	char *anchor;
-	gboolean is_wiki;
-} LinkRequest;
-
-
-static void free_link_request(LinkRequest *request) {
-	g_object_unref(request->file);
-	g_free(request->anchor);
-	g_free(request);
-}
-
-
-static void open_local_link(GObject *source, GAsyncResult *result, gpointer data) {
-	LinkRequest *request = data;
-	g_autoptr(GFileInfo) info = g_file_query_info_finish(G_FILE(source), result, NULL);
-	g_autofree char *name = g_file_get_basename(request->file);
-	gboolean is_shown_here = info && g_file_info_get_file_type(info) == G_FILE_TYPE_REGULAR
-		&& (request->is_wiki || is_document_name(name));
-	if (is_shown_here) {
-		Tab *tab = open_window_file(request->window, request->file);
-		if (request->anchor)
-			show_tab_anchor(tab, request->anchor);
-	} else {
-		g_autofree char *uri = g_file_get_uri(request->file);
-		launch_default(request->window->window, uri);
-	}
-	free_link_request(request);
-}
-
-
 static void ask_to_open_link(Window *window, const char *link) {
 	AdwDialog *dialog = adw_alert_dialog_new(TEXT_OPEN_LINK_QUESTION, link);
 	adw_alert_dialog_add_responses(ADW_ALERT_DIALOG(dialog), "cancel", TEXT_CANCEL, "open", TEXT_OPEN_LINK, NULL);
@@ -196,6 +165,49 @@ static void ask_to_open_link(Window *window, const char *link) {
 	adw_alert_dialog_set_close_response(ADW_ALERT_DIALOG(dialog), "cancel");
 	g_object_set_data_full(G_OBJECT(dialog), "link", g_strdup(link), g_free);
 	adw_alert_dialog_choose(ADW_ALERT_DIALOG(dialog), window->window, NULL, finish_link_question, window);
+}
+
+
+/* A local link waiting to learn whether its target exists, holding its window, which may close meanwhile */
+typedef struct {
+	GtkWidget *window;
+	GFile *file;
+	char *anchor;
+	gboolean is_wiki;
+} LinkRequest;
+
+
+static void free_link_request(LinkRequest *request) {
+	g_object_unref(request->window);
+	g_object_unref(request->file);
+	g_free(request->anchor);
+	g_free(request);
+}
+
+
+/* A closed window leaves its application, and its Window is no longer one to open things in */
+static Window *get_open_window(GtkWidget *widget) {
+	return gtk_window_get_application(GTK_WINDOW(widget)) ? g_object_get_data(G_OBJECT(widget), "window") : NULL;
+}
+
+
+/* Other files open in their own application, which may run them, so that asks first as a web link does */
+static void open_local_link(GObject *source, GAsyncResult *result, gpointer data) {
+	LinkRequest *request = data;
+	g_autoptr(GFileInfo) info = g_file_query_info_finish(G_FILE(source), result, NULL);
+	g_autofree char *name = g_file_get_basename(request->file);
+	Window *window = get_open_window(request->window);
+	gboolean is_shown_here = info && g_file_info_get_file_type(info) == G_FILE_TYPE_REGULAR
+		&& (request->is_wiki || is_document_name(name));
+	if (window && is_shown_here) {
+		Tab *tab = open_window_file(window, request->file);
+		if (request->anchor)
+			show_tab_anchor(tab, request->anchor);
+	} else if (window && info) {
+		g_autofree char *uri = g_file_get_uri(request->file);
+		ask_to_open_link(window, uri);
+	}
+	free_link_request(request);
 }
 
 
@@ -214,11 +226,14 @@ static void open_link(Tab *tab, const char *link, gpointer data) {
 	g_autofree char *target = is_wiki ? g_strdup(escaped) : g_uri_unescape_string(escaped, NULL);
 	if (!target || !*target)
 		return;
-	if (is_wiki && !is_document_name(target))
-		g_set_str(&target, g_strconcat(target, ".md", NULL));
+	if (is_wiki && !is_document_name(target)) {
+		char *document = g_strconcat(target, ".md", NULL);
+		g_free(target);
+		target = document;
+	}
 	g_autoptr(GFile) parent = g_file_get_parent(tab->file);
 	LinkRequest *request = g_new0(LinkRequest, 1);
-	request->window = window;
+	request->window = g_object_ref(window->window);
 	request->file = g_path_is_absolute(target) || !parent ? g_file_new_for_path(target)
 		: g_file_resolve_relative_path(parent, target);
 	request->anchor = anchor && *anchor ? g_uri_unescape_string(anchor, NULL) : NULL;
@@ -296,11 +311,14 @@ static void save_indicated_tab(AdwTabView *view, AdwTabPage *page, Window *windo
 }
 
 
+/* The dialog holds its window, which may have closed while the dialog was open */
 static void open_chosen_files(GObject *dialog, GAsyncResult *result, gpointer data) {
+	g_autoptr(GtkWidget) widget = data;
 	g_autoptr(GListModel) files = gtk_file_dialog_open_multiple_finish(GTK_FILE_DIALOG(dialog), result, NULL);
-	for (guint index = 0; files && index < g_list_model_get_n_items(files); index++) {
+	Window *window = get_open_window(widget);
+	for (guint index = 0; window && files && index < g_list_model_get_n_items(files); index++) {
 		g_autoptr(GFile) file = g_list_model_get_item(files, index);
-		open_window_file(data, file);
+		open_window_file(window, file);
 	}
 }
 
@@ -318,13 +336,16 @@ static void choose_files(GSimpleAction *action, GVariant *parameter, gpointer da
 	g_autoptr(GtkFileFilter) everything = gtk_file_filter_new();
 	gtk_file_filter_set_name(everything, TEXT_ALL_FILTER);
 	gtk_file_filter_add_pattern(everything, "*");
-	g_list_store_append(filters, markdown);
+	/* Every kind of text opens here, so the dialog starts on all files */
 	g_list_store_append(filters, everything);
+	g_list_store_append(filters, markdown);
 	gtk_file_dialog_set_filters(dialog, G_LIST_MODEL(filters));
+	gtk_file_dialog_set_default_filter(dialog, everything);
 	Tab *tab = get_current_tab(window);
 	g_autoptr(GFile) folder = tab ? g_file_get_parent(tab->file) : NULL;
 	gtk_file_dialog_set_initial_folder(dialog, folder);
-	gtk_file_dialog_open_multiple(dialog, GTK_WINDOW(window->window), NULL, open_chosen_files, window);
+	gtk_file_dialog_open_multiple(dialog, GTK_WINDOW(window->window), NULL, open_chosen_files,
+		g_object_ref(window->window));
 }
 
 
@@ -357,17 +378,6 @@ static void go_forward(GSimpleAction *action, GVariant *parameter, gpointer data
 }
 
 
-/* Mouse buttons eight and nine are the side buttons that browsers use for back and forward */
-static void press_side_button(GtkGestureClick *gesture, int presses, double x, double y, Window *window) {
-	guint button = gtk_gesture_single_get_current_button(GTK_GESTURE_SINGLE(gesture));
-	const char *action = button == BACK_BUTTON ? "back" : button == FORWARD_BUTTON ? "forward" : NULL;
-	if (!action)
-		return;
-	g_action_group_activate_action(G_ACTION_GROUP(window->window), action, NULL);
-	gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
-}
-
-
 static void close_current(GSimpleAction *action, GVariant *parameter, gpointer data) {
 	Window *window = data;
 	AdwTabPage *page = adw_tab_view_get_selected_page(ADW_TAB_VIEW(window->tab_view));
@@ -376,13 +386,8 @@ static void close_current(GSimpleAction *action, GVariant *parameter, gpointer d
 }
 
 
-static gboolean drop_files(GtkDropTarget *target, const GValue *value, double x, double y, Window *window) {
-	GSList *files = gdk_file_list_get_files(g_value_get_boxed(value));
-	for (GSList *item = files; item; item = item->next)
-		open_window_file(window, item->data);
-	gboolean has_files = files != NULL;
-	g_slist_free(files);
-	return has_files;
+static void open_dropped_file(GFile *file, gpointer window) {
+	open_window_file(window, file);
 }
 
 
@@ -438,12 +443,6 @@ static gboolean close_window(GtkWindow *gtk_window, Window *window) {
 }
 
 
-static void note_window_shown(GtkWidget *widget) {
-	note_startup_moment("Window shown");
-	note_first_frame(widget);
-}
-
-
 static GtkWidget *create_sidebar(Window *window) {
 	window->outline_list = create_outline_list(jump_to_heading, window);
 	gtk_widget_add_css_class(window->outline_list, "navigation-sidebar");
@@ -452,8 +451,8 @@ static GtkWidget *create_sidebar(Window *window) {
 	gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroller), window->outline_list);
 	GtkWidget *empty = gtk_label_new(TEXT_NO_HEADINGS);
 	gtk_widget_add_css_class(empty, "dimmed");
+	/* The list only changes because the document's headings did, which switches without a fade */
 	window->outline_stack = gtk_stack_new();
-	gtk_stack_set_transition_type(GTK_STACK(window->outline_stack), GTK_STACK_TRANSITION_TYPE_CROSSFADE);
 	gtk_stack_add_named(GTK_STACK(window->outline_stack), scroller, "list");
 	gtk_stack_add_named(GTK_STACK(window->outline_stack), empty, "empty");
 	gtk_stack_set_visible_child_name(GTK_STACK(window->outline_stack), "empty");
@@ -573,7 +572,7 @@ Window *create_window(GtkApplication *application) {
 	window->window = adw_application_window_new(application);
 	g_object_set_data_full(G_OBJECT(window->window), "window", window, free_window);
 	gtk_window_set_title(GTK_WINDOW(window->window), TEXT_APPLICATION_NAME);
-	note_startup_moment("Window created");
+	watch_window_frames(window->window);
 	apply_window_geometry(GTK_WINDOW(window->window), &state.geometry);
 	window->split = adw_overlay_split_view_new();
 	adw_overlay_split_view_set_sidebar(ADW_OVERLAY_SPLIT_VIEW(window->split), create_sidebar(window));
@@ -593,16 +592,9 @@ Window *create_window(GtkApplication *application) {
 	adw_breakpoint_add_setter(breakpoint, G_OBJECT(window->split), "collapsed", &collapsed);
 	adw_application_window_add_breakpoint(ADW_APPLICATION_WINDOW(window->window), breakpoint);
 	add_actions(window);
-	GtkGesture *side_buttons = gtk_gesture_click_new();
-	gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(side_buttons), 0);
-	gtk_event_controller_set_propagation_phase(GTK_EVENT_CONTROLLER(side_buttons), GTK_PHASE_CAPTURE);
-	g_signal_connect(side_buttons, "pressed", G_CALLBACK(press_side_button), window);
-	gtk_widget_add_controller(window->window, GTK_EVENT_CONTROLLER(side_buttons));
-	GtkDropTarget *drop = gtk_drop_target_new(GDK_TYPE_FILE_LIST, GDK_ACTION_COPY);
-	g_signal_connect(drop, "drop", G_CALLBACK(drop_files), window);
-	gtk_widget_add_controller(window->window, GTK_EVENT_CONTROLLER(drop));
+	add_mouse_navigation(window->window, "win.back", "win.forward");
+	add_file_drop(window->window, open_dropped_file, window);
 	g_signal_connect(window->window, "close-request", G_CALLBACK(close_window), window);
-	g_signal_connect(window->window, "map", G_CALLBACK(note_window_shown), NULL);
 	update_window(window);
 	return window;
 }
@@ -613,7 +605,7 @@ GtkWindow *get_gtk_window(Window *window) {
 }
 
 
-static gboolean fade_in_empty_page(GtkWidget *widget, GdkFrameClock *clock, gpointer data) {
+static gboolean fade_in_empty_page(gpointer data) {
 	Window *window = data;
 	window->is_started = TRUE;
 	update_window(window);
@@ -624,5 +616,5 @@ static gboolean fade_in_empty_page(GtkWidget *widget, GdkFrameClock *clock, gpoi
 /* Fades the empty page in on the next frame when the window was opened without a document */
 void show_window_start(Window *window) {
 	if (!window->is_started)
-		gtk_widget_add_tick_callback(window->window, fade_in_empty_page, window, NULL);
+		run_after_frame(window->window, fade_in_empty_page, window, NULL);
 }

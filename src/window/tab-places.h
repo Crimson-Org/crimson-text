@@ -1,10 +1,9 @@
 #pragma once
 
-#include "common/smooth-scroll.h"
+#include "common/widgets/smooth-scroll.h"
 #include "window/tab.h"
 
 /* Room around the editor text, shared by its setup and by reading its top line */
-#define EDITOR_MARGIN 28
 #define FIND_GLIDE_DURATION 300
 
 /* Where the reader was, for going back and forward */

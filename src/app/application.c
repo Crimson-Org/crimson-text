@@ -33,16 +33,21 @@ typedef struct {
 } OpenRequest;
 
 
-static gboolean open_requested_files(GtkWidget *widget, GdkFrameClock *clock, gpointer data) {
+static gboolean open_requested_files(gpointer data) {
 	OpenRequest *request = data;
 	for (guint index = 0; index < request->files->len; index++) {
 		Tab *tab = open_window_file(request->window, g_ptr_array_index(request->files, index));
 		if (request->is_editing)
 			request_tab_editing(tab);
 	}
+	return G_SOURCE_REMOVE;
+}
+
+
+static void free_open_request(gpointer data) {
+	OpenRequest *request = data;
 	g_ptr_array_unref(request->files);
 	g_free(request);
-	return G_SOURCE_REMOVE;
 }
 
 
@@ -56,59 +61,12 @@ static void open_files(GApplication *application, GFile **files, int count, cons
 		g_ptr_array_add(request->files, g_object_ref(files[index]));
 	GtkWidget *window = GTK_WIDGET(get_gtk_window(request->window));
 	gtk_window_present(GTK_WINDOW(window));
-	gtk_widget_add_tick_callback(window, open_requested_files, request, NULL);
-}
-
-
-static void show_about(GSimpleAction *action, GVariant *parameter, gpointer application) {
-	AdwDialog *dialog = adw_about_dialog_new();
-	adw_about_dialog_set_application_name(ADW_ABOUT_DIALOG(dialog), get_application_identity()->name);
-	adw_about_dialog_set_application_icon(ADW_ABOUT_DIALOG(dialog), get_application_identity()->id);
-	adw_about_dialog_set_version(ADW_ABOUT_DIALOG(dialog), get_application_identity()->version);
-	adw_dialog_present(dialog, GTK_WIDGET(gtk_application_get_active_window(application)));
-}
-
-
-static void open_settings(GSimpleAction *action, GVariant *parameter, gpointer application) {
-	show_settings(GTK_WIDGET(gtk_application_get_active_window(application)));
-}
-
-
-static void quit(GSimpleAction *action, GVariant *parameter, gpointer application) {
-	GtkWindow *window = gtk_application_get_active_window(application);
-	if (window)
-		gtk_window_close(window);
+	run_after_frame(window, open_requested_files, request, free_open_request);
 }
 
 
 static void start_up(GApplication *application) {
-	static const GActionEntry ENTRIES[] = {
-		{"about", show_about, NULL, NULL, NULL, {0}},
-		{"settings", open_settings, NULL, NULL, NULL, {0}},
-		{"quit", quit, NULL, NULL, NULL, {0}},
-	};
-	static const struct {
-		const char *action, *accelerators[4];
-	} SHORTCUTS[] = {
-		{"win.open", {"<Control>o", NULL}},
-		{"win.save", {"<Control>s", NULL}},
-		{"win.edit", {"<Control>e", NULL}},
-		{"win.close-tab", {"<Control>w", NULL}},
-		{"win.sidebar", {"F9", NULL}},
-		{"win.back", {"<Alt>Left", NULL}},
-		{"win.zoom-in", {"<Control>plus", "<Control>equal", "<Control>KP_Add", NULL}},
-		{"win.zoom-out", {"<Control>minus", "<Control>KP_Subtract", NULL}},
-		{"win.zoom-reset", {"<Control>0", "<Control>KP_0", NULL}},
-		{"win.find", {"<Control>f", NULL}},
-		{"win.forward", {"<Alt>Right", NULL}},
-		{"app.settings", {"<Control>comma", NULL}},
-		{"app.quit", {"<Control>q", NULL}},
-	};
-	g_action_map_add_action_entries(G_ACTION_MAP(application), ENTRIES, G_N_ELEMENTS(ENTRIES), application);
 	apply_settings();
-	for (guint index = 0; index < G_N_ELEMENTS(SHORTCUTS); index++)
-		gtk_application_set_accels_for_action(GTK_APPLICATION(application), SHORTCUTS[index].action,
-			SHORTCUTS[index].accelerators);
 }
 
 
@@ -137,6 +95,20 @@ static const GOptionEntry OPTIONS[] = {
 	G_OPTION_ENTRY_NULL,
 };
 
+static const Shortcut SHORTCUTS[] = {
+	{"win.open", {"<Control>o", NULL}},
+	{"win.save", {"<Control>s", NULL}},
+	{"win.edit", {"<Control>e", NULL}},
+	{"win.close-tab", {"<Control>w", NULL}},
+	{"win.sidebar", {"F9", NULL}},
+	{"win.back", {"<Alt>Left", NULL}},
+	{"win.forward", {"<Alt>Right", NULL}},
+	{"win.zoom-in", {"<Control>plus", "<Control>equal", "<Control>KP_Add", NULL}},
+	{"win.zoom-out", {"<Control>minus", "<Control>KP_Subtract", NULL}},
+	{"win.zoom-reset", {"<Control>0", "<Control>KP_0", NULL}},
+	{"win.find", {"<Control>f", NULL}},
+};
+
 const ApplicationSetup APPLICATION_SETUP = {
 	.identity = {"io.github.CrimsonOrg.CrimsonText", TEXT_APPLICATION_NAME, "crimson-text", APPLICATION_VERSION},
 	.start_up = start_up,
@@ -144,4 +116,7 @@ const ApplicationSetup APPLICATION_SETUP = {
 	.open = open_files,
 	.handle_options = handle_options,
 	.options = OPTIONS,
+	.show_settings = show_settings,
+	.shortcuts = SHORTCUTS,
+	.shortcut_count = G_N_ELEMENTS(SHORTCUTS),
 };

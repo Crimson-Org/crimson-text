@@ -7,9 +7,9 @@
 #include "document/inline.h"
 #include "view/picture-flow.h"
 #include "view/render.h"
-#include "common/smooth-scroll.h"
+#include "common/widgets/smooth-scroll.h"
 #include "editor/source-view.h"
-#include "common/spacing.h"
+#include "common/widgets/spacing.h"
 
 #define LIST_SPACING 6
 #define MAXIMUM_CELL_CHARACTERS 48
@@ -740,29 +740,11 @@ static void color_code_run(int start, int end, GtkTextTag *source, gpointer data
 }
 
 
-/* Tab stops four characters wide in the code font, as the editor has them */
-static void measure_code_tabs(RenderContext *context, GtkTextTag *code) {
-	if (g_object_get_data(G_OBJECT(code), "tabs-measured"))
-		return;
-	PangoLayout *layout = gtk_widget_create_pango_layout(GTK_WIDGET(context->view), "    ");
-	PangoFontDescription *font = pango_font_description_from_string("monospace");
-	pango_layout_set_font_description(layout, font);
-	int width = 0;
-	pango_layout_get_pixel_size(layout, &width, NULL);
-	PangoTabArray *tabs = pango_tab_array_new_with_positions(1, TRUE, PANGO_TAB_LEFT, MAX(width, 1));
-	g_object_set(code, "tabs", tabs, NULL);
-	pango_tab_array_free(tabs);
-	pango_font_description_free(font);
-	g_object_unref(layout);
-	g_object_set_data(G_OBJECT(code), "tabs-measured", GINT_TO_POINTER(TRUE));
-}
-
-
 /* Code is text in the view on a drawn background, so it can be selected, searched and streamed like the rest */
 static void render_code(RenderContext *context, const Block *block) {
 	GtkTextBuffer *buffer = get_buffer(context);
 	GtkTextTag *code = get_named_tag(context, "code");
-	measure_code_tabs(context, code);
+	set_code_tab_stops(context->view, code);
 	context->indent += CODE_PADDING;
 	int start = begin_line(context);
 	int base = get_end_offset(context);

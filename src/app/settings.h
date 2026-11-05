@@ -12,7 +12,7 @@ typedef struct {
 	int reading_size, editor_size;
 	/* Editor font family, or empty for the system monospace font */
 	char *editor_font;
-	/* A pencil fades in beside the block under the pointer, as well as Edit Here in the right click menu */
+	/* A pencil fades in beside the block under the pointer */
 	gboolean shows_edit_pencil;
 } Settings;
 

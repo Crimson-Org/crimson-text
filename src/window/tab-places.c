@@ -2,9 +2,9 @@
 #include <string.h>
 
 #include "view/document-view.h"
-#include "common/long-lines.h"
+#include "common/text/long-lines.h"
 #include "app/settings.h"
-#include "common/smooth-scroll.h"
+#include "common/widgets/smooth-scroll.h"
 #include "window/tab-places.h"
 
 #define SCROLL_DURATION 360
@@ -13,6 +13,8 @@
 #define BLOCK_EDIT_GAP 6
 /* Pixels a block may start above the view and still count as starting in it */
 #define VIEW_LINE_SLACK 8
+/* Back keeps this many earlier places, so a long reading session holds no endless list */
+#define MAXIMUM_PLACES 100
 
 static GtkTextView *get_view(Tab *tab) {
 	return GTK_TEXT_VIEW(tab->content);
@@ -94,27 +96,28 @@ static void scroll_view_to_line(Tab *tab, int line) {
 }
 
 
-/* Waits, frame by frame, until the view is shown with a scroll range before it moves */
-static gboolean land_view(GtkWidget *root, GdkFrameClock *clock, gpointer data) {
-	Tab *tab = get_tab(root);
-	/* A view coming back from hiding has no scroll range until its first layout, which would clamp the move */
+/* Moves once the view is shown with a scroll range, since a view coming back from hiding has none until its first
+ * layout, which would clamp the move */
+static void land_view(Tab *tab) {
 	gboolean is_laid_out = gtk_widget_get_mapped(tab->scroller)
 		&& gtk_adjustment_get_page_size(get_view_adjustment(tab)) > 0;
 	if (tab->next_content || !is_laid_out)
-		return G_SOURCE_CONTINUE;
+		return;
 	scroll_view_to_line(tab, tab->pending_line);
 	tab->pending_line = 0;
-	tab->landing_handler = 0;
-	return G_SOURCE_REMOVE;
+	g_clear_signal_handler(&tab->landing_handler, get_view_adjustment(tab));
 }
 
 
+/* The scroll range changes with each layout, so a hidden view waits without drawing every frame */
 void request_view_line(Tab *tab, int line) {
 	if (line <= 0)
 		return;
 	tab->pending_line = line;
 	if (!tab->landing_handler)
-		tab->landing_handler = gtk_widget_add_tick_callback(tab->root, land_view, NULL, NULL);
+		tab->landing_handler = g_signal_connect_swapped(get_view_adjustment(tab), "changed", G_CALLBACK(land_view),
+			tab);
+	land_view(tab);
 }
 
 
@@ -341,16 +344,20 @@ static GtkWidget *create_hover_button(const char *icon, const char *tooltip, GCa
 }
 
 
+static GtkAdjustment *get_editor_adjustment(Tab *tab) {
+	return gtk_scrollable_get_vadjustment(GTK_SCROLLABLE(tab->editor));
+}
+
+
 /* Scrolls once the editor has its real size, since it may have been hidden or sliding in before */
-static gboolean land_editor(GtkWidget *root, GdkFrameClock *clock, gpointer data) {
-	Tab *tab = get_tab(root);
+static void land_editor(Tab *tab) {
 	if (!gtk_widget_get_mapped(tab->editor) || gtk_widget_get_height(tab->editor) == 0)
-		return G_SOURCE_CONTINUE;
-	tab->editor_landing_handler = 0;
+		return;
+	g_clear_signal_handler(&tab->editor_landing_handler, get_editor_adjustment(tab));
 	GtkTextBuffer *buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(tab->editor));
 	GtkTextMark *mark = gtk_text_buffer_get_mark(buffer, "landing");
 	if (!mark)
-		return G_SOURCE_REMOVE;
+		return;
 	GtkTextIter iter;
 	GdkRectangle location;
 	gtk_text_buffer_get_iter_at_mark(buffer, &iter, mark);
@@ -358,11 +365,10 @@ static gboolean land_editor(GtkWidget *root, GdkFrameClock *clock, gpointer data
 	/* The line lands where get_editor_line reads, so leaving and coming back never drifts */
 	GdkRectangle visible;
 	gtk_text_view_get_visible_rect(GTK_TEXT_VIEW(tab->editor), &visible);
-	GtkAdjustment *adjustment = gtk_scrollable_get_vadjustment(GTK_SCROLLABLE(tab->editor));
-	double value = location.y - EDITOR_MARGIN + gtk_adjustment_get_value(adjustment) - visible.y;
+	GtkAdjustment *adjustment = get_editor_adjustment(tab);
+	double value = location.y - DOCUMENT_MARGIN + gtk_adjustment_get_value(adjustment) - visible.y;
 	double maximum = gtk_adjustment_get_upper(adjustment) - gtk_adjustment_get_page_size(adjustment);
 	gtk_adjustment_set_value(adjustment, CLAMP(value, 0, MAX(maximum, 0)));
-	return G_SOURCE_REMOVE;
 }
 
 
@@ -376,7 +382,9 @@ void scroll_editor_to_line(Tab *tab, int line) {
 		mark = gtk_text_buffer_create_mark(buffer, "landing", &iter, TRUE);
 	gtk_text_buffer_move_mark(buffer, mark, &iter);
 	if (!tab->editor_landing_handler)
-		tab->editor_landing_handler = gtk_widget_add_tick_callback(tab->root, land_editor, NULL, NULL);
+		tab->editor_landing_handler = g_signal_connect_swapped(get_editor_adjustment(tab), "changed",
+			G_CALLBACK(land_editor), tab);
+	land_editor(tab);
 }
 
 
@@ -384,7 +392,7 @@ int get_editor_line(Tab *tab) {
 	GdkRectangle visible;
 	gtk_text_view_get_visible_rect(GTK_TEXT_VIEW(tab->editor), &visible);
 	GtkTextIter iter;
-	gtk_text_view_get_line_at_y(GTK_TEXT_VIEW(tab->editor), &iter, visible.y + EDITOR_MARGIN, NULL);
+	gtk_text_view_get_line_at_y(GTK_TEXT_VIEW(tab->editor), &iter, visible.y + DOCUMENT_MARGIN, NULL);
 	return get_joined_line(gtk_text_view_get_buffer(GTK_TEXT_VIEW(tab->editor)), gtk_text_iter_get_line(&iter)) + 1;
 }
 
@@ -406,6 +414,8 @@ static Place get_current_place(Tab *tab) {
 void remember_place(Tab *tab) {
 	Place place = get_current_place(tab);
 	g_array_append_val(tab->back_places, place);
+	if (tab->back_places->len > MAXIMUM_PLACES)
+		g_array_remove_index(tab->back_places, 0);
 	g_array_set_size(tab->forward_places, 0);
 }
 
@@ -502,8 +512,22 @@ static void select_everything(GSimpleAction *action, GVariant *parameter, gpoint
 
 /* Shows the view's own menu in place of the text view's, which would list editing commands a page cannot use
  * and put Edit Here last */
+static gboolean is_picture_at(GtkWidget *view, double x, double y) {
+	for (GtkWidget *widget = gtk_widget_pick(view, x, y, GTK_PICK_DEFAULT); widget && widget != view;
+		widget = gtk_widget_get_parent(widget))
+		if (GTK_IS_PICTURE(widget))
+			return TRUE;
+	return FALSE;
+}
+
+
 static void open_view_menu(GtkGestureClick *click, int presses, double x, double y, Tab *tab) {
 	GtkWidget *view = gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(click));
+	/* A picture has its own menu, for opening, saving and copying it */
+	if (is_picture_at(view, x, y)) {
+		gtk_gesture_set_state(GTK_GESTURE(click), GTK_EVENT_SEQUENCE_DENIED);
+		return;
+	}
 	gtk_gesture_set_state(GTK_GESTURE(click), GTK_EVENT_SEQUENCE_CLAIMED);
 	GtkTextIter line;
 	int index = view == tab->content && get_line_at_point(tab, view, x, y, &line) ? find_block_at(tab, &line) : -1;
@@ -511,6 +535,8 @@ static void open_view_menu(GtkGestureClick *click, int presses, double x, double
 	gboolean has_selection = gtk_text_buffer_get_has_selection(gtk_text_view_get_buffer(GTK_TEXT_VIEW(view)));
 	GAction *copy = g_action_map_lookup_action(G_ACTION_MAP(tab->view_actions), "copy");
 	g_simple_action_set_enabled(G_SIMPLE_ACTION(copy), has_selection);
+	GAction *edit = g_action_map_lookup_action(G_ACTION_MAP(tab->view_actions), "edit-here");
+	g_simple_action_set_enabled(G_SIMPLE_ACTION(edit), can_switch_tab_editing(tab));
 	graphene_point_t point;
 	if (!gtk_widget_compute_point(view, tab->overlay, &GRAPHENE_POINT_INIT(x, y), &point))
 		return;

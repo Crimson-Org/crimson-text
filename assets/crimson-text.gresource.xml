@@ -2,7 +2,6 @@
 <gresources>
 	<gresource prefix="/io/github/CrimsonOrg/CrimsonText">
 		<file>style.css</file>
-		<file alias="common.css">../subprojects/crimson-core/assets/common.css</file>
 		<file>icons/scalable/apps/io.github.CrimsonOrg.CrimsonText.svg</file>
 	</gresource>
 </gresources>

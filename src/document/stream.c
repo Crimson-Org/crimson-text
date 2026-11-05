@@ -129,17 +129,16 @@ static void finish_stream(Stream *stream, char *error) {
 }
 
 
-/* Reads the file, refusing ones too large to hold or that look like binary data */
-static char *read_file(Stream *stream, gsize *length, char **etag, char **error) {
+char *read_text_file(GFile *file, GCancellable *cancellable, gsize *length, char **etag, char **error) {
 	g_autoptr(GError) failure = NULL;
-	g_autoptr(GFileInfo) info = g_file_query_info(stream->file, G_FILE_ATTRIBUTE_STANDARD_SIZE,
-		G_FILE_QUERY_INFO_NONE, stream->cancellable, NULL);
+	g_autoptr(GFileInfo) info = g_file_query_info(file, G_FILE_ATTRIBUTE_STANDARD_SIZE, G_FILE_QUERY_INFO_NONE,
+		cancellable, NULL);
 	if (info && g_file_info_get_size(info) > MAXIMUM_FILE_BYTES) {
 		*error = g_strdup(TEXT_FILE_TOO_LARGE);
 		return NULL;
 	}
 	char *text = NULL;
-	if (!g_file_load_contents(stream->file, stream->cancellable, &text, length, etag, &failure)) {
+	if (!g_file_load_contents(file, cancellable, &text, length, etag, &failure)) {
 		*error = g_strdup(failure->message);
 		return NULL;
 	}
@@ -172,7 +171,7 @@ static gpointer run_stream(gpointer data) {
 	char *text = g_steal_pointer(&stream->text);
 	gsize length = text ? strlen(text) : 0;
 	char *etag = NULL, *error = NULL;
-	if (!text && !(text = read_file(stream, &length, &etag, &error))) {
+	if (!text && !(text = read_text_file(stream->file, stream->cancellable, &length, &etag, &error))) {
 		finish_stream(stream, error);
 		release_stream(stream);
 		return NULL;

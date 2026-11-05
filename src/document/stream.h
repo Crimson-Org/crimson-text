@@ -26,4 +26,7 @@ typedef struct {
 } StreamEvents;
 
 Stream *start_stream(GFile *file, const char *text, const char *name, const StreamEvents *events);
+/* Reads a file on the calling thread, refusing ones too large to hold or that look like binary data, with the
+ * reason in error */
+char *read_text_file(GFile *file, GCancellable *cancellable, gsize *length, char **etag, char **error);
 void stop_stream(Stream *stream);

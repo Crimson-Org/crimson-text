@@ -19,7 +19,7 @@
 const char *const MARKDOWN_EXTENSIONS[] = {"md", "markdown", "mdown", "mkd", "mkdn", "mdx"};
 const guint MARKDOWN_EXTENSION_COUNT = G_N_ELEMENTS(MARKDOWN_EXTENSIONS);
 
-/* Plain text extensions shown as reading text */
+/* Plain text extensions, which open in a tab when a document links to them */
 static const char *const TEXT_EXTENSIONS[] = {"txt", "text"};
 
 static const char *const SOURCE_EXTENSIONS[] = {

@@ -4,11 +4,11 @@
 #include "document/charset.h"
 #include "editor/code-editor.h"
 #include "view/data-table.h"
-#include "common/loading.h"
-#include "common/log.h"
-#include "common/long-lines.h"
+#include "common/widgets/loading.h"
+#include "common/app/log.h"
+#include "common/text/long-lines.h"
 #include "view/document-view.h"
-#include "common/smooth-scroll.h"
+#include "common/widgets/smooth-scroll.h"
 #include "editor/source-view.h"
 #include "window/tab-places.h"
 #include "window/tab.h"
@@ -24,6 +24,8 @@ static void free_tab(gpointer data) {
 	Tab *tab = data;
 	shut_down_tab(tab);
 	g_object_unref(tab->file_cancellable);
+	g_clear_object(&tab->reload_cancellable);
+	g_free(tab->saving_text);
 	g_clear_object(&tab->monitor);
 	g_clear_object(&tab->next_content);
 	g_clear_object(&tab->editor_search);
@@ -33,6 +35,7 @@ static void free_tab(gpointer data) {
 	g_free(tab->source);
 	g_free(tab->disk_text);
 	g_free(tab->etag);
+	g_free(tab->language);
 	g_free(tab->charset);
 	g_free(tab->pending_anchor);
 	clear_render_context(&tab->context);
@@ -49,6 +52,10 @@ void shut_down_tab(Tab *tab) {
 	tab->is_closed = TRUE;
 	g_clear_pointer(&tab->stream, stop_stream);
 	g_cancellable_cancel(tab->file_cancellable);
+	g_cancellable_cancel(tab->reload_cancellable);
+	GtkAdjustment *view_range = gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(tab->scroller));
+	g_clear_signal_handler(&tab->landing_handler, view_range);
+	g_clear_signal_handler(&tab->editor_landing_handler, gtk_scrollable_get_vadjustment(GTK_SCROLLABLE(tab->editor)));
 	g_signal_handlers_disconnect_by_data(adw_style_manager_get_default(), tab);
 	if (tab->monitor) {
 		g_signal_handlers_disconnect_by_data(tab->monitor, tab);
@@ -117,7 +124,7 @@ static GtkWidget *create_content_view(Tab *tab) {
 
 static void fill_editor(Tab *tab) {
 	g_autofree char *name = get_tab_title(tab);
-	prepare_source_view(GTK_SOURCE_VIEW(tab->editor), name, NULL);
+	prepare_source_view(GTK_SOURCE_VIEW(tab->editor), name, tab->language);
 	GtkTextBuffer *buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(tab->editor));
 	gtk_text_buffer_begin_irreversible_action(buffer);
 	gtk_text_buffer_set_text(buffer, tab->source ? tab->source : "", -1);
@@ -151,6 +158,8 @@ static void take_source(char *source, const SourceInfo *info, gpointer data) {
 	Tab *tab = data;
 	if (info->etag)
 		g_set_str(&tab->etag, info->etag);
+	/* The language found from the text, such as a script's first line, stays for every later fill */
+	g_set_str(&tab->language, info->language);
 	if (!tab->disk_text) {
 		tab->disk_text = g_strdup(source);
 		tab->charset = g_strdup(info->charset);
@@ -177,8 +186,10 @@ static const char *get_view_page(Tab *tab) {
 }
 
 
+/* Content arriving leaves the loading page, and the error page of a missing file another program then made */
 static void show_view(Tab *tab) {
-	if (g_strcmp0(gtk_stack_get_visible_child_name(GTK_STACK(tab->root)), "loading") != 0)
+	const char *shown = gtk_stack_get_visible_child_name(GTK_STACK(tab->root));
+	if (g_strcmp0(shown, "loading") != 0 && g_strcmp0(shown, "error") != 0)
 		return;
 	gtk_stack_set_visible_child_name(GTK_STACK(tab->root), get_view_page(tab));
 	note_startup_moment("Document shown");
@@ -284,9 +295,10 @@ static void start_rendering(Tab *tab, const char *text) {
 }
 
 
-/* Code colours are copied from the style scheme, so a light or dark switch renders the document again */
+/* Code colours are copied from the style scheme, so a light or dark switch renders the document again, while a
+ * table has no code to colour */
 static void follow_dark_style(AdwStyleManager *styles, GParamSpec *property, Tab *tab) {
-	if (tab->source && !tab->stream)
+	if (tab->source && !tab->stream && !tab->data_table)
 		start_rendering(tab, tab->source);
 }
 
@@ -301,44 +313,84 @@ static void render_again(Tab *tab, const char *text) {
 }
 
 
-static void reload_from_disk(GObject *source, GAsyncResult *result, gpointer data) {
-	g_autofree char *bytes = NULL;
-	g_autofree char *etag = NULL;
+/* What a reload read from disk on its worker thread */
+typedef struct {
+	char *contents, *charset, *etag;
+} Reload;
+
+
+static void free_reload(gpointer data) {
+	Reload *reload = data;
+	g_free(reload->contents);
+	g_free(reload->charset);
+	g_free(reload->etag);
+	g_free(reload);
+}
+
+
+/* Reading and decoding a large file takes long enough to hold the window, so they run on a worker */
+static void read_reload(GTask *task, gpointer source, gpointer data, GCancellable *cancellable) {
 	gsize length = 0;
-	if (!g_file_load_contents_finish(G_FILE(source), result, &bytes, &length, &etag, NULL))
+	g_autofree char *etag = NULL, *error = NULL;
+	g_autofree char *bytes = read_text_file(G_FILE(source), cancellable, &length, &etag, &error);
+	if (!bytes) {
+		g_task_return_new_error(task, G_IO_ERROR, G_IO_ERROR_FAILED, "%s", error);
+		return;
+	}
+	Reload *reload = g_new0(Reload, 1);
+	reload->contents = decode_text(bytes, length, &reload->charset);
+	reload->etag = g_steal_pointer(&etag);
+	g_task_return_pointer(task, reload, free_reload);
+}
+
+
+static gboolean is_own_text(Tab *tab, const char *contents) {
+	return g_strcmp0(contents, tab->disk_text) == 0 || g_strcmp0(contents, tab->saving_text) == 0;
+}
+
+
+static void apply_reload(GObject *source, GAsyncResult *result, gpointer data) {
+	g_autoptr(GError) error = NULL;
+	Reload *reload = g_task_propagate_pointer(G_TASK(result), &error);
+	/* A cancelled reload may belong to a tab that is gone, so it is never looked at */
+	if (!reload)
 		return;
 	Tab *tab = data;
-	g_autofree char *charset = NULL;
-	char *contents = decode_text(bytes, length, &charset);
-	if (!contents || g_strcmp0(charset, tab->charset) != 0) {
-		/* A different charset than the tab writes would change the file on the next save */
-		g_free(contents);
+	/* A different charset than the tab writes would change the file on the next save */
+	if (!reload->contents || g_strcmp0(reload->charset, tab->charset) != 0 || is_tab_modified(tab)
+		|| tab->is_read_only) {
+		free_reload(reload);
 		return;
 	}
-	gboolean is_same = g_strcmp0(contents, tab->disk_text) == 0;
-	if (is_same || is_tab_modified(tab) || tab->is_read_only) {
-		if (is_same)
-			g_set_str(&tab->etag, etag);
-		g_free(contents);
+	g_set_str(&tab->etag, reload->etag);
+	if (is_own_text(tab, reload->contents)) {
+		free_reload(reload);
 		return;
 	}
-	g_set_str(&tab->etag, etag);
-	gboolean is_growth = tab->is_code && tab->disk_text && g_str_has_prefix(contents, tab->disk_text);
-	if (is_growth)
-		append_code_text(tab, contents + strlen(tab->disk_text));
-	g_free(tab->disk_text);
-	tab->disk_text = contents;
-	if (is_growth)
+	g_autofree char *old_text = g_steal_pointer(&tab->disk_text);
+	tab->disk_text = g_steal_pointer(&reload->contents);
+	free_reload(reload);
+	if (tab->is_code && old_text && g_str_has_prefix(tab->disk_text, old_text)) {
+		append_code_text(tab, tab->disk_text + strlen(old_text));
+		g_set_str(&tab->source, tab->disk_text);
 		return;
+	}
+	/* The source is the new text before the editor is filled from it */
+	render_again(tab, tab->disk_text);
 	if (tab->is_editor_filled)
 		fill_editor(tab);
-	render_again(tab, contents);
 }
 
 
 static void notice_file_change(GFileMonitor *monitor, GFile *file, GFile *other, GFileMonitorEvent event, Tab *tab) {
-	if (event == G_FILE_MONITOR_EVENT_CHANGES_DONE_HINT || event == G_FILE_MONITOR_EVENT_CREATED)
-		g_file_load_contents_async(tab->file, tab->file_cancellable, reload_from_disk, tab);
+	if (event != G_FILE_MONITOR_EVENT_CHANGES_DONE_HINT && event != G_FILE_MONITOR_EVENT_CREATED)
+		return;
+	/* Only the newest change counts, so an older read that finishes later never shows */
+	g_cancellable_cancel(tab->reload_cancellable);
+	g_clear_object(&tab->reload_cancellable);
+	tab->reload_cancellable = g_cancellable_new();
+	g_autoptr(GTask) task = g_task_new(tab->file, tab->reload_cancellable, apply_reload, tab);
+	g_task_run_in_thread(task, read_reload);
 }
 
 
@@ -406,10 +458,10 @@ static GtkWidget *create_edit_page(Tab *tab) {
 	tab->editor = create_source_view();
 	gtk_widget_add_css_class(tab->editor, "editor");
 	gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(tab->editor), GTK_WRAP_WORD_CHAR);
-	gtk_text_view_set_top_margin(GTK_TEXT_VIEW(tab->editor), EDITOR_MARGIN);
-	gtk_text_view_set_bottom_margin(GTK_TEXT_VIEW(tab->editor), EDITOR_MARGIN);
-	gtk_text_view_set_left_margin(GTK_TEXT_VIEW(tab->editor), EDITOR_MARGIN);
-	gtk_text_view_set_right_margin(GTK_TEXT_VIEW(tab->editor), EDITOR_MARGIN);
+	gtk_text_view_set_top_margin(GTK_TEXT_VIEW(tab->editor), DOCUMENT_MARGIN);
+	gtk_text_view_set_bottom_margin(GTK_TEXT_VIEW(tab->editor), DOCUMENT_MARGIN);
+	gtk_text_view_set_left_margin(GTK_TEXT_VIEW(tab->editor), DOCUMENT_MARGIN);
+	gtk_text_view_set_right_margin(GTK_TEXT_VIEW(tab->editor), DOCUMENT_MARGIN);
 	GtkTextBuffer *buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(tab->editor));
 	g_signal_connect(buffer, "modified-changed", G_CALLBACK(notice_buffer_change), tab);
 	/* Documents are edited at the same width they are read at */
@@ -568,8 +620,13 @@ static void finish_saving(GObject *source, GAsyncResult *result, gpointer data) 
 	gboolean is_saved = g_file_replace_contents_finish(G_FILE(source), result, &etag, &error);
 	g_application_release(g_application_get_default());
 	Tab *tab = get_tab(root);
-	if (is_saved)
+	tab->is_saving = FALSE;
+	if (is_saved) {
 		g_set_str(&tab->etag, etag);
+		g_free(tab->disk_text);
+		tab->disk_text = g_steal_pointer(&tab->saving_text);
+	}
+	g_clear_pointer(&tab->saving_text, g_free);
 	if (!is_saved && tab->is_closed) {
 		g_warning("Saving %s failed: %s", g_file_peek_path(G_FILE(source)), error->message);
 		return;
@@ -582,6 +639,11 @@ static void finish_saving(GObject *source, GAsyncResult *result, gpointer data) 
 			g_clear_pointer(&tab->etag, g_free);
 		gtk_text_buffer_set_modified(gtk_text_view_get_buffer(GTK_TEXT_VIEW(tab->editor)), TRUE);
 		tab->events.show_message(tab, message, tab->events.data);
+	}
+	if (tab->is_save_wanted && !tab->is_closed) {
+		tab->is_save_wanted = FALSE;
+		save_tab(tab);
+		return;
 	}
 	finish_waiting_close(tab, is_saved);
 }
@@ -598,8 +660,8 @@ static void write_tab_text(Tab *tab, const char *text) {
 		finish_waiting_close(tab, FALSE);
 		return;
 	}
-	g_free(tab->disk_text);
-	tab->disk_text = g_strdup(text);
+	g_set_str(&tab->saving_text, text);
+	tab->is_saving = TRUE;
 	g_application_hold(g_application_get_default());
 	g_file_replace_contents_bytes_async(tab->file, bytes, tab->etag, FALSE, G_FILE_CREATE_NONE, NULL, finish_saving,
 		g_object_ref(tab->root));
@@ -607,6 +669,10 @@ static void write_tab_text(Tab *tab, const char *text) {
 
 
 void save_tab(Tab *tab) {
+	if (tab->is_saving) {
+		tab->is_save_wanted = TRUE;
+		return;
+	}
 	if (!tab->is_editor_filled || tab->is_read_only) {
 		finish_waiting_close(tab, !tab->is_read_only);
 		return;

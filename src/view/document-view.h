@@ -3,7 +3,10 @@
 #include <gtk/gtk.h>
 
 /* Room between the view's edges and its text, before any indentation */
+/* The page margin of both the reading view and the editor */
 #define DOCUMENT_MARGIN 28
+/* Code tab stops are this many characters wide, in code blocks and in the editor */
+#define CODE_TAB_WIDTH 4
 /* Space below a block and below a line inside a list, before zooming */
 #define BLOCK_GAP 16
 #define LIST_GAP 6
@@ -26,3 +29,5 @@ void set_document_zoom(int percent);
 gboolean is_text_hidden(const GtkTextIter *iter);
 void flash_text_line(GtkTextView *view, const GtkTextIter *line_start);
 void draw_text_flash(GtkTextView *view, GtkSnapshot *snapshot);
+/* Sets tab stops of CODE_TAB_WIDTH characters in the code font on the tag, which then follow the text size */
+void set_code_tab_stops(GtkTextView *view, GtkTextTag *code);

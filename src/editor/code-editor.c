@@ -1,6 +1,19 @@
 #include "editor/code-editor.h"
-#include "common/long-lines.h"
+#include "common/text/long-lines.h"
+#include "source/line-numbers.h"
 #include "editor/source-view.h"
+
+#define MINIMUM_NUMBER_DIGITS 2
+#define LINE_NUMBERS_KEY "file-line-numbers"
+
+
+/* A tab can start its code editor again, such as after a reload, and keeps the numbers it has */
+static void show_file_line_numbers(GtkSourceView *view) {
+	if (g_object_get_data(G_OBJECT(view), LINE_NUMBERS_KEY))
+		return;
+	GtkSourceGutterRenderer *numbers = add_file_line_numbers(view, 0, MINIMUM_NUMBER_DIGITS, NULL);
+	g_object_set_data(G_OBJECT(view), LINE_NUMBERS_KEY, numbers);
+}
 
 
 /* Code files have no separate view, so the editor with colours and line numbers is how they are read */

@@ -8,20 +8,26 @@
 #include "lang/en.h"
 #include "view/images.h"
 #include "app/launch.h"
-#include "common/key-store.h"
+#include "common/app/identity.h"
+#include "common/storage/key-store.h"
 
 #define LOADER_THREADS 6
 #define DOWNLOAD_TIMEOUT_SECONDS 30L
 #define CONNECT_TIMEOUT_SECONDS 10L
-#define MAXIMUM_DOWNLOAD_BYTES (64L * 1024 * 1024)
 #define MISSING_ICON_SIZE 32
+/* Decoded pictures kept for showing again, by the memory their pixels take */
+#define MAXIMUM_CACHED_BYTES (256 * 1024 * 1024)
+#define BYTES_PER_PIXEL 4
+/* Web pictures written out for other applications are removed once this old */
+#define SAVED_PICTURE_DAYS 7
+#define SAVED_PICTURE_FOLDER "pictures"
 
 /* How the one time curl set up went, which g_once_init needs to be other than zero */
 enum {
 	CURL_READY = 1,
 	CURL_FAILED,
 };
-#define USER_AGENT "CrimsonText/1.0"
+/* A picture file or download, compressed or not, may hold at most this much */
 #define MAXIMUM_PICTURE_BYTES (64 * 1024 * 1024)
 /* Decoded pictures above this many pixels are refused, since each pixel takes four bytes of memory */
 #define MAXIMUM_PICTURE_PIXELS (64 * 1024 * 1024)
@@ -41,8 +47,10 @@ typedef struct {
 	int waiting_count;
 } ImageJob;
 
-/* Finished textures by location, used only on the main thread */
+/* Finished textures by location, oldest use first in the queue, used only on the main thread */
 static GHashTable *texture_cache;
+static GQueue cache_order = G_QUEUE_INIT;
+static gsize cached_bytes;
 /* Jobs still loading by location, used only on the main thread */
 static GHashTable *loading_jobs;
 static GThreadPool *loader_pool;
@@ -79,8 +87,12 @@ static int check_download_cancelled(void *job, curl_off_t total, curl_off_t rece
 }
 
 
+/* The limit counts the bytes after unpacking, so a small download that unpacks into gigabytes stops too */
 static size_t receive_bytes(char *data, size_t size, size_t count, void *buffer) {
-	g_byte_array_append(buffer, (const guint8 *)data, size * count);
+	GByteArray *received = buffer;
+	if (received->len + size * count > MAXIMUM_PICTURE_BYTES)
+		return 0;
+	g_byte_array_append(received, (const guint8 *)data, size * count);
 	return size * count;
 }
 
@@ -92,7 +104,7 @@ static GBytes *download(ImageJob *job, char **error) {
 		g_once_init_leave(&is_curl_ready, curl_global_init(CURL_GLOBAL_DEFAULT) == CURLE_OK ? CURL_READY : CURL_FAILED);
 	CURL *request = curl_easy_init();
 	if (!request) {
-		*error = g_strdup("The network library could not start");
+		*error = g_strdup(TEXT_NETWORK_FAILED);
 		return NULL;
 	}
 	GByteArray *buffer = g_byte_array_new();
@@ -106,8 +118,8 @@ static GBytes *download(ImageJob *job, char **error) {
 	curl_easy_setopt(request, CURLOPT_NOSIGNAL, 1L);
 	curl_easy_setopt(request, CURLOPT_TIMEOUT, DOWNLOAD_TIMEOUT_SECONDS);
 	curl_easy_setopt(request, CURLOPT_CONNECTTIMEOUT, CONNECT_TIMEOUT_SECONDS);
-	curl_easy_setopt(request, CURLOPT_MAXFILESIZE_LARGE, (curl_off_t)MAXIMUM_DOWNLOAD_BYTES);
-	curl_easy_setopt(request, CURLOPT_USERAGENT, USER_AGENT);
+	curl_easy_setopt(request, CURLOPT_MAXFILESIZE_LARGE, (curl_off_t)MAXIMUM_PICTURE_BYTES);
+	curl_easy_setopt(request, CURLOPT_USERAGENT, get_user_agent());
 	curl_easy_setopt(request, CURLOPT_ACCEPT_ENCODING, "");
 	curl_easy_setopt(request, CURLOPT_WRITEFUNCTION, receive_bytes);
 	curl_easy_setopt(request, CURLOPT_WRITEDATA, buffer);
@@ -117,7 +129,7 @@ static GBytes *download(ImageJob *job, char **error) {
 	CURLcode status = curl_easy_perform(request);
 	curl_easy_cleanup(request);
 	if (status != CURLE_OK) {
-		*error = g_strdup(curl_easy_strerror(status));
+		*error = g_strdup(status == CURLE_WRITE_ERROR ? TEXT_PICTURE_TOO_LARGE : curl_easy_strerror(status));
 		g_byte_array_unref(buffer);
 		return NULL;
 	}
@@ -143,12 +155,49 @@ static void show_texture(GtkPicture *picture, GdkTexture *texture, const char *e
 }
 
 
+static gsize get_texture_bytes(GdkTexture *texture) {
+	return (gsize)gdk_texture_get_width(texture) * gdk_texture_get_height(texture) * BYTES_PER_PIXEL;
+}
+
+
+/* The key starts with the location, so an edited picture's older copy goes when the new one is kept */
+static gboolean is_same_location(const char *key, const char *other) {
+	gsize length = strcspn(key, "\n");
+	return strncmp(key, other, length) == 0 && other[length] == '\n';
+}
+
+
+static void forget_cached_texture(GList *item) {
+	char *key = item->data;
+	cached_bytes -= get_texture_bytes(g_hash_table_lookup(texture_cache, key));
+	g_queue_delete_link(&cache_order, item);
+	g_hash_table_remove(texture_cache, key);
+}
+
+
+/* Keeps the newest pictures within the memory limit, while pictures on screen keep their own texture */
+static void cache_texture(const char *key, GdkTexture *texture) {
+	for (GList *item = cache_order.head; item;) {
+		GList *next = item->next;
+		if (is_same_location(item->data, key))
+			forget_cached_texture(item);
+		item = next;
+	}
+	char *owned_key = g_strdup(key);
+	g_hash_table_insert(texture_cache, owned_key, g_object_ref(texture));
+	g_queue_push_tail(&cache_order, owned_key);
+	cached_bytes += get_texture_bytes(texture);
+	while (cached_bytes > MAXIMUM_CACHED_BYTES && cache_order.length > 1)
+		forget_cached_texture(cache_order.head);
+}
+
+
 static gboolean deliver_job(gpointer data) {
 	ImageJob *job = data;
 	if (g_hash_table_lookup(loading_jobs, job->key) == job)
 		g_hash_table_steal(loading_jobs, job->key);
 	if (job->texture)
-		g_hash_table_insert(texture_cache, g_strdup(job->key), g_object_ref(job->texture));
+		cache_texture(job->key, job->texture);
 	for (guint index = 0; index < job->pictures->len; index++) {
 		g_autoptr(GtkPicture) picture = g_weak_ref_get(g_ptr_array_index(job->pictures, index));
 		if (!picture)
@@ -246,7 +295,7 @@ static void load_in_thread(gpointer data, gpointer unused) {
 	if (bytes && !g_cancellable_is_cancelled(job->cancellable))
 		job->texture = decode_picture(bytes, job->cancellable, &job->error);
 	if (!job->texture && !job->error)
-		job->error = g_strdup("The picture was not loaded");
+		job->error = g_strdup(TEXT_PICTURE_FAILED);
 	g_idle_add(deliver_job, job);
 }
 
@@ -295,6 +344,9 @@ void load_picture(GtkPicture *picture, const char *source, const char *base_dire
 	g_autofree char *key = g_strdup_printf("%s\n%" G_GINT64_FORMAT, location, (gint64)status.st_mtime);
 	GdkTexture *cached = g_hash_table_lookup(texture_cache, key);
 	if (cached) {
+		GList *item = g_queue_find_custom(&cache_order, key, (GCompareFunc)strcmp);
+		g_queue_unlink(&cache_order, item);
+		g_queue_push_tail_link(&cache_order, item);
 		show_texture(picture, cached, NULL);
 		return;
 	}
@@ -338,6 +390,24 @@ static gboolean is_local_picture(GtkPicture *picture) {
 }
 
 
+/* Removes saved web pictures from earlier days once per run, since nothing else ever would */
+static void prune_saved_pictures(const char *directory) {
+	static gboolean is_pruned;
+	if (is_pruned)
+		return;
+	is_pruned = TRUE;
+	g_autoptr(GDir) folder = g_dir_open(directory, 0, NULL);
+	gint64 oldest = g_get_real_time() / G_USEC_PER_SEC - SAVED_PICTURE_DAYS * G_TIME_SPAN_DAY / G_USEC_PER_SEC;
+	const char *name;
+	while (folder && (name = g_dir_read_name(folder))) {
+		g_autofree char *path = g_build_filename(directory, name, NULL);
+		GStatBuf status;
+		if (g_stat(path, &status) == 0 && status.st_mtime < oldest)
+			g_remove(path);
+	}
+}
+
+
 /* Writes a web picture to the cache so other applications can open it */
 static GFile *get_picture_file(GtkPicture *picture) {
 	const char *location = g_object_get_data(G_OBJECT(picture), "location");
@@ -348,15 +418,19 @@ static GFile *get_picture_file(GtkPicture *picture) {
 		return NULL;
 	g_autofree char *hash = g_compute_checksum_for_string(G_CHECKSUM_SHA1, location, -1);
 	g_autofree char *name = g_strconcat(hash, ".png", NULL);
-	g_autofree char *directory = g_build_filename(g_get_user_cache_dir(), "crimson-text", "pictures", NULL);
+	g_autofree char *directory = get_cache_file_path(SAVED_PICTURE_FOLDER);
 	g_autofree char *path = g_build_filename(directory, name, NULL);
+	prune_saved_pictures(directory);
 	if (!make_private_folder(directory) || !gdk_texture_save_to_png(texture, path))
 		return NULL;
 	return g_file_new_for_path(path);
 }
 
 
+/* Only a picture that loaded is opened, since its file is then known to be a picture and not something that runs */
 void open_picture_outside(GtkPicture *picture) {
+	if (!get_loaded_texture(picture))
+		return;
 	g_autoptr(GFile) file = get_picture_file(picture);
 	if (!file)
 		return;

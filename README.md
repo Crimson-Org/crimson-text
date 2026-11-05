@@ -36,21 +36,21 @@ Crimson Text shows only the document, with an optional contents sidebar.
 
 ### Markdown
 
-[GitHub](https://github.github.com/gfm/), [Obsidian](https://obsidian.md/) and [Pandoc](https://pandoc.org/) flavoured Markdown, with tables, task lists, alerts and HTML logos and badges.
+[GitHub](https://github.github.com/gfm/) and [Obsidian](https://obsidian.md/) flavoured Markdown, with tables, task lists, alerts and HTML logos and badges.
 
 ### Large files
 
-Large files and pictures never freeze the window, since they load in pieces.\
-Files reload by themselves when changed on disk, unless you have unsaved edits.
+Large files and pictures load in pieces, so the window shows them while they arrive.\
+Files reload by themselves when another program changes them, unless you have unsaved edits.
 
 ### More than Markdown
 
-Code and logs open with colours, TODO files become tickable lists and CSV files become tables.
+Code opens with colours, TODO files become tickable lists and CSV files become tables.
 
 ## Building
 
-You need a [C compiler](https://gcc.gnu.org/), [make](https://www.gnu.org/software/make/), [pkg-config](https://www.freedesktop.org/wiki/Software/pkg-config/) and the development files for [GTK4](https://gtk.org), [libadwaita](https://gnome.pages.gitlab.gnome.org/libadwaita/), [GtkSourceView](https://gitlab.gnome.org/GNOME/gtksourceview) and [libcurl](https://curl.se/libcurl/).\
-On [openSUSE](https://www.opensuse.org/) these come from `sudo zypper install gcc make pkg-config gtk4-devel libadwaita-devel gtksourceview5-devel libcurl-devel`.
+You need a [C compiler](https://gcc.gnu.org/), [make](https://www.gnu.org/software/make/), [pkg-config](https://www.freedesktop.org/wiki/Software/pkg-config/) and the development files for [GTK4](https://gtk.org), [libadwaita](https://gnome.pages.gitlab.gnome.org/libadwaita/), [GtkSourceView](https://gitlab.gnome.org/GNOME/gtksourceview), [libcurl](https://curl.se/libcurl/) and [glycin](https://gitlab.gnome.org/GNOME/glycin).\
+On [openSUSE](https://www.opensuse.org/) these come from `sudo zypper install gcc make pkg-config gtk4-devel libadwaita-devel gtksourceview5-devel libcurl-devel libglycin-devel`.
 
 Steps:
  1. Clone using `git clone --recurse-submodules https://github.com/Crimson-Org/crimson-text`
