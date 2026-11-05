@@ -390,24 +390,6 @@ static gboolean is_local_picture(GtkPicture *picture) {
 }
 
 
-/* Removes saved web pictures from earlier days once per run, since nothing else ever would */
-static void prune_saved_pictures(const char *directory) {
-	static gboolean is_pruned;
-	if (is_pruned)
-		return;
-	is_pruned = TRUE;
-	g_autoptr(GDir) folder = g_dir_open(directory, 0, NULL);
-	gint64 oldest = g_get_real_time() / G_USEC_PER_SEC - SAVED_PICTURE_DAYS * G_TIME_SPAN_DAY / G_USEC_PER_SEC;
-	const char *name;
-	while (folder && (name = g_dir_read_name(folder))) {
-		g_autofree char *path = g_build_filename(directory, name, NULL);
-		GStatBuf status;
-		if (g_stat(path, &status) == 0 && status.st_mtime < oldest)
-			g_remove(path);
-	}
-}
-
-
 /* Writes a web picture to the cache so other applications can open it */
 static GFile *get_picture_file(GtkPicture *picture) {
 	const char *location = g_object_get_data(G_OBJECT(picture), "location");
@@ -420,7 +402,10 @@ static GFile *get_picture_file(GtkPicture *picture) {
 	g_autofree char *name = g_strconcat(hash, ".png", NULL);
 	g_autofree char *directory = get_cache_file_path(SAVED_PICTURE_FOLDER);
 	g_autofree char *path = g_build_filename(directory, name, NULL);
-	prune_saved_pictures(directory);
+	static gboolean is_trimmed;
+	if (!is_trimmed)
+		remove_old_files(directory, SAVED_PICTURE_DAYS);
+	is_trimmed = TRUE;
 	if (!make_private_folder(directory) || !gdk_texture_save_to_png(texture, path))
 		return NULL;
 	return g_file_new_for_path(path);
