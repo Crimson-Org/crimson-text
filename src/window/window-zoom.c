@@ -1,3 +1,4 @@
+#include "lang/en.h"
 #include "app/settings.h"
 #include "window/window-private.h"
 
@@ -15,7 +16,7 @@ static void change_zoom(Window *window, int step) {
 	save_settings();
 	if (window->zoom_toast)
 		adw_toast_dismiss(window->zoom_toast);
-	g_autofree char *text = g_strdup_printf("%d%%", *size);
+	g_autofree char *text = g_strdup_printf(TEXT_PERCENT, *size);
 	AdwToast *toast = adw_toast_new(text);
 	adw_toast_set_timeout(toast, ZOOM_TOAST_SECONDS);
 	g_set_weak_pointer(&window->zoom_toast, toast);

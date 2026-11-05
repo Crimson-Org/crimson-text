@@ -1,6 +1,7 @@
 #include <string.h>
 
 #include "lang/en.h"
+#include "common/app/identity.h"
 #include "common/app/log.h"
 #include "common/app/startup.h"
 #include "common/window/file-drop.h"
@@ -14,8 +15,17 @@
 
 #define SIDEBAR_WIDTH_FRACTION 0.24
 #define SIDEBAR_MINIMUM_WIDTH 200
-#define SIDEBAR_MAXIMUM_WIDTH 300
+/* The widest sidebar matches the default of the other Crimson apps */
+#define SIDEBAR_MAXIMUM_WIDTH 260
 #define NARROW_CONDITION "max-width: 640sp"
+/* Addresses longer than this show this many characters from the start, the cut mark and the rest from the end */
+#define LINK_SHOWN_CHARACTERS 90
+#define LINK_SHOWN_START 60
+/* A hyphen that lines never break at, so a dash inside an address never looks like a word broken in two */
+#define UNBREAKING_HYPHEN "\u2011"
+#define LINK_CUT_MARK "..."
+/* The address before the site, the site in bold, and the rest */
+#define LINK_DESCRIPTION "%s<b>%s</b>%s"
 /* Put before the title of a document with unsaved changes */
 #define MODIFIED_MARK "* "
 
@@ -83,6 +93,10 @@ static void update_window(Window *window) {
 	g_simple_action_set_enabled(window->edit_action, can_switch_editing);
 	g_simple_action_set_enabled(window->save_action, has_tab && is_tab_modified(tab));
 	g_simple_action_set_enabled(window->close_action, has_tab);
+	g_simple_action_set_enabled(window->find_action, has_tab);
+	/* There is nothing to find on the empty page, so the bar leaves with the last document */
+	if (!has_tab)
+		gtk_search_bar_set_search_mode(GTK_SEARCH_BAR(window->find_bar), FALSE);
 	g_simple_action_set_state(window->edit_action, g_variant_new_boolean(has_tab && tab->is_editing));
 	update_sidebar(window, has_tab && tab->has_contents);
 	if (!has_tab) {
@@ -126,6 +140,35 @@ static void show_tab_message(Tab *tab, const char *message, gpointer data) {
 }
 
 
+/* Every question the window asks shares one look, wide enough for its answers to sit side by side, with Cancel
+ * first and closing it */
+static AdwDialog *create_question(const char *heading, const char *body) {
+	AdwDialog *dialog = adw_alert_dialog_new(heading, body);
+	adw_alert_dialog_set_prefer_wide_layout(ADW_ALERT_DIALOG(dialog), TRUE);
+	adw_alert_dialog_add_response(ADW_ALERT_DIALOG(dialog), "cancel", TEXT_CANCEL);
+	adw_alert_dialog_set_close_response(ADW_ALERT_DIALOG(dialog), "cancel");
+	return dialog;
+}
+
+
+/* Names and addresses in questions keep their dashes inside a line, where a break would look like a broken word */
+static char *join_unbroken(const char *text) {
+	g_auto(GStrv) pieces = g_strsplit(text, "-", -1);
+	return g_strjoinv(UNBREAKING_HYPHEN, pieces);
+}
+
+
+/* Fills the body from a format that shows names in bold, escaping the names it is given */
+static void set_question_names(AdwDialog *dialog, const char *format, ...) {
+	va_list arguments;
+	va_start(arguments, format);
+	g_autofree char *body = g_markup_vprintf_escaped(format, arguments);
+	va_end(arguments);
+	adw_alert_dialog_set_body_use_markup(ADW_ALERT_DIALOG(dialog), TRUE);
+	adw_alert_dialog_set_body(ADW_ALERT_DIALOG(dialog), body);
+}
+
+
 static void finish_folder_question(GObject *dialog, GAsyncResult *result, gpointer data) {
 	g_autoptr(GtkWidget) root = data;
 	const char *response = adw_alert_dialog_choose_finish(ADW_ALERT_DIALOG(dialog), result);
@@ -135,15 +178,17 @@ static void finish_folder_question(GObject *dialog, GAsyncResult *result, gpoint
 
 static void ask_for_folder(Tab *tab, gpointer data) {
 	Window *window = data;
+	/* The folder goes by its own name, since its whole path would wrap over several lines */
 	g_autoptr(GFile) folder = g_file_get_parent(tab->file);
-	g_autofree char *name = g_file_get_parse_name(folder);
-	AdwDialog *dialog = adw_alert_dialog_new(TEXT_FOLDER_MISSING_QUESTION, NULL);
-	adw_alert_dialog_format_body(ADW_ALERT_DIALOG(dialog), TEXT_FOLDER_MISSING_DETAIL, name);
-	adw_alert_dialog_add_responses(ADW_ALERT_DIALOG(dialog), "cancel", TEXT_CANCEL, "create", TEXT_CREATE_AND_SAVE,
-		NULL);
+	g_autofree char *folder_base = g_file_get_basename(folder);
+	g_autofree char *file_base = get_tab_title(tab);
+	g_autofree char *folder_name = join_unbroken(folder_base);
+	g_autofree char *file_name = join_unbroken(file_base);
+	AdwDialog *dialog = create_question(TEXT_FOLDER_MISSING_QUESTION, NULL);
+	set_question_names(dialog, TEXT_FOLDER_MISSING_DETAIL, folder_name, file_name);
+	adw_alert_dialog_add_response(ADW_ALERT_DIALOG(dialog), "create", TEXT_CREATE_AND_SAVE);
 	adw_alert_dialog_set_response_appearance(ADW_ALERT_DIALOG(dialog), "create", ADW_RESPONSE_SUGGESTED);
 	adw_alert_dialog_set_default_response(ADW_ALERT_DIALOG(dialog), "create");
-	adw_alert_dialog_set_close_response(ADW_ALERT_DIALOG(dialog), "cancel");
 	adw_alert_dialog_choose(ADW_ALERT_DIALOG(dialog), window->window, NULL, finish_folder_question,
 		g_object_ref(tab->root));
 }
@@ -157,12 +202,44 @@ static void finish_link_question(GObject *dialog, GAsyncResult *result, gpointer
 }
 
 
+/* Keeps the start and end of a very long address, so a question about it stays a few lines tall */
+static char *shorten_address(const char *link) {
+	glong length = g_utf8_strlen(link, -1);
+	if (length <= LINK_SHOWN_CHARACTERS)
+		return g_strdup(link);
+	const char *start_end = g_utf8_offset_to_pointer(link, LINK_SHOWN_START);
+	const char *end_start = g_utf8_offset_to_pointer(link, length - (LINK_SHOWN_CHARACTERS - LINK_SHOWN_START));
+	g_autofree char *start = g_strndup(link, start_end - link);
+	return g_strconcat(start, LINK_CUT_MARK, end_start, NULL);
+}
+
+
+/* The address once, at most about two lines long, with its site in bold, so the site is easy to check */
+static char *describe_link(const char *link) {
+	g_autofree char *shown = shorten_address(link);
+	g_autoptr(GUri) uri = g_uri_parse(link, G_URI_FLAGS_NONE, NULL);
+	const char *host = uri ? g_uri_get_host(uri) : NULL;
+	const char *site = host && *host ? strstr(shown, host) : NULL;
+	if (!site) {
+		g_autofree char *unbroken = join_unbroken(shown);
+		return g_markup_escape_text(unbroken, -1);
+	}
+	g_autofree char *before = g_strndup(shown, site - shown);
+	g_autofree char *start = join_unbroken(before);
+	g_autofree char *middle = join_unbroken(host);
+	g_autofree char *end = join_unbroken(site + strlen(host));
+	return g_markup_printf_escaped(LINK_DESCRIPTION, start, middle, end);
+}
+
+
 static void ask_to_open_link(Window *window, const char *link) {
-	AdwDialog *dialog = adw_alert_dialog_new(TEXT_OPEN_LINK_QUESTION, link);
-	adw_alert_dialog_add_responses(ADW_ALERT_DIALOG(dialog), "cancel", TEXT_CANCEL, "open", TEXT_OPEN_LINK, NULL);
+	AdwDialog *dialog = create_question(TEXT_OPEN_LINK_QUESTION, NULL);
+	g_autofree char *description = describe_link(link);
+	adw_alert_dialog_set_body_use_markup(ADW_ALERT_DIALOG(dialog), TRUE);
+	adw_alert_dialog_set_body(ADW_ALERT_DIALOG(dialog), description);
+	adw_alert_dialog_add_response(ADW_ALERT_DIALOG(dialog), "open", TEXT_OPEN_LINK);
 	adw_alert_dialog_set_response_appearance(ADW_ALERT_DIALOG(dialog), "open", ADW_RESPONSE_SUGGESTED);
 	adw_alert_dialog_set_default_response(ADW_ALERT_DIALOG(dialog), "open");
-	adw_alert_dialog_set_close_response(ADW_ALERT_DIALOG(dialog), "cancel");
 	g_object_set_data_full(G_OBJECT(dialog), "link", g_strdup(link), g_free);
 	adw_alert_dialog_choose(ADW_ALERT_DIALOG(dialog), window->window, NULL, finish_link_question, window);
 }
@@ -293,14 +370,13 @@ static gboolean close_page(AdwTabView *view, AdwTabPage *page, Window *window) {
 		return GDK_EVENT_STOP;
 	}
 	g_autofree char *title = get_tab_title(tab);
-	AdwDialog *dialog = adw_alert_dialog_new(TEXT_SAVE_QUESTION, NULL);
-	adw_alert_dialog_format_body(ADW_ALERT_DIALOG(dialog), TEXT_SAVE_DETAIL, title);
-	adw_alert_dialog_add_responses(ADW_ALERT_DIALOG(dialog), "cancel", TEXT_CANCEL, "discard", TEXT_DISCARD,
-		"save", TEXT_SAVE, NULL);
+	g_autofree char *name = join_unbroken(title);
+	AdwDialog *dialog = create_question(TEXT_SAVE_QUESTION, NULL);
+	set_question_names(dialog, TEXT_SAVE_DETAIL, name);
+	adw_alert_dialog_add_responses(ADW_ALERT_DIALOG(dialog), "discard", TEXT_DISCARD, "save", TEXT_SAVE, NULL);
 	adw_alert_dialog_set_response_appearance(ADW_ALERT_DIALOG(dialog), "discard", ADW_RESPONSE_DESTRUCTIVE);
 	adw_alert_dialog_set_response_appearance(ADW_ALERT_DIALOG(dialog), "save", ADW_RESPONSE_SUGGESTED);
 	adw_alert_dialog_set_default_response(ADW_ALERT_DIALOG(dialog), "save");
-	adw_alert_dialog_set_close_response(ADW_ALERT_DIALOG(dialog), "cancel");
 	adw_alert_dialog_choose(ADW_ALERT_DIALOG(dialog), window->window, NULL, finish_close_question, g_object_ref(page));
 	return GDK_EVENT_STOP;
 }
@@ -405,12 +481,32 @@ static void remember_sidebar(Window *window) {
 }
 
 
-static gboolean has_modified_tab(Window *window) {
+/* The names of the files with unsaved changes, in tab order, for the caller to free */
+static GPtrArray *list_modified_tabs(Window *window) {
+	GPtrArray *names = g_ptr_array_new_with_free_func(g_free);
 	AdwTabView *view = ADW_TAB_VIEW(window->tab_view);
-	for (int index = 0; index < adw_tab_view_get_n_pages(view); index++)
-		if (is_tab_modified(get_tab(adw_tab_page_get_child(adw_tab_view_get_nth_page(view, index)))))
-			return TRUE;
-	return FALSE;
+	for (int index = 0; index < adw_tab_view_get_n_pages(view); index++) {
+		Tab *tab = get_tab(adw_tab_page_get_child(adw_tab_view_get_nth_page(view, index)));
+		if (is_tab_modified(tab)) {
+			g_autofree char *title = get_tab_title(tab);
+			g_ptr_array_add(names, join_unbroken(title));
+		}
+	}
+	return names;
+}
+
+
+/* Names up to three files whose changes would be lost, and counts more, whose names would not fit */
+static void name_unsaved_files(AdwDialog *dialog, GPtrArray *names) {
+	const char *const *name = (const char *const *)names->pdata;
+	if (names->len == 1)
+		set_question_names(dialog, TEXT_LOST_DETAIL, name[0]);
+	else if (names->len == 2)
+		set_question_names(dialog, TEXT_TWO_LOST_DETAIL, name[0], name[1]);
+	else if (names->len == 3)
+		set_question_names(dialog, TEXT_THREE_LOST_DETAIL, name[0], name[1], name[2]);
+	else
+		set_question_names(dialog, TEXT_MANY_LOST_DETAIL, (int)names->len);
 }
 
 
@@ -424,11 +520,12 @@ static void finish_quit_question(GObject *dialog, GAsyncResult *result, gpointer
 
 
 static gboolean close_window(GtkWindow *gtk_window, Window *window) {
-	if (!window->is_close_confirmed && has_modified_tab(window)) {
-		AdwDialog *dialog = adw_alert_dialog_new(TEXT_DISCARD_QUESTION, TEXT_DISCARD_DETAIL);
-		adw_alert_dialog_add_responses(ADW_ALERT_DIALOG(dialog), "cancel", TEXT_CANCEL, "discard", TEXT_DISCARD, NULL);
+	g_autoptr(GPtrArray) unsaved = list_modified_tabs(window);
+	if (!window->is_close_confirmed && unsaved->len > 0) {
+		AdwDialog *dialog = create_question(TEXT_DISCARD_QUESTION, NULL);
+		name_unsaved_files(dialog, unsaved);
+		adw_alert_dialog_add_response(ADW_ALERT_DIALOG(dialog), "discard", TEXT_DISCARD);
 		adw_alert_dialog_set_response_appearance(ADW_ALERT_DIALOG(dialog), "discard", ADW_RESPONSE_DESTRUCTIVE);
-		adw_alert_dialog_set_close_response(ADW_ALERT_DIALOG(dialog), "cancel");
 		adw_alert_dialog_choose(ADW_ALERT_DIALOG(dialog), window->window, NULL, finish_quit_question, window);
 		return GDK_EVENT_STOP;
 	}
@@ -450,8 +547,10 @@ static GtkWidget *create_sidebar(Window *window) {
 	GtkWidget *scroller = gtk_scrolled_window_new();
 	gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroller), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
 	gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroller), window->outline_list);
-	GtkWidget *empty = gtk_label_new(TEXT_NO_HEADINGS);
-	gtk_widget_add_css_class(empty, "dimmed");
+	GtkWidget *empty = adw_status_page_new();
+	adw_status_page_set_icon_name(ADW_STATUS_PAGE(empty), "view-list-symbolic");
+	adw_status_page_set_title(ADW_STATUS_PAGE(empty), TEXT_NO_HEADINGS);
+	gtk_widget_add_css_class(empty, "compact");
 	/* The list only changes because the document's headings did, which switches without a fade */
 	window->outline_stack = gtk_stack_new();
 	gtk_stack_add_named(GTK_STACK(window->outline_stack), scroller, "list");
@@ -475,12 +574,16 @@ static GtkWidget *create_header(Window *window) {
 	gtk_widget_set_tooltip_text(window->sidebar_button, TEXT_SIDEBAR);
 	gtk_actionable_set_action_name(GTK_ACTIONABLE(window->sidebar_button), "win.sidebar");
 	adw_header_bar_pack_start(ADW_HEADER_BAR(header), window->sidebar_button);
+	g_autoptr(GMenu) document = g_menu_new();
+	g_menu_append(document, TEXT_OPEN, "win.open");
+	g_menu_append(document, TEXT_SAVE, "win.save");
+	g_menu_append(document, TEXT_FIND_MENU, "win.find");
+	g_autoptr(GMenu) program = g_menu_new();
+	g_menu_append(program, TEXT_SETTINGS, "app.settings");
+	g_menu_append(program, TEXT_ABOUT, "app.about");
 	g_autoptr(GMenu) menu = g_menu_new();
-	g_menu_append(menu, TEXT_OPEN, "win.open");
-	g_menu_append(menu, TEXT_SAVE, "win.save");
-	g_menu_append(menu, TEXT_FIND_MENU, "win.find");
-	g_menu_append(menu, TEXT_SETTINGS, "app.settings");
-	g_menu_append(menu, TEXT_ABOUT, "app.about");
+	g_menu_append_section(menu, NULL, G_MENU_MODEL(document));
+	g_menu_append_section(menu, NULL, G_MENU_MODEL(program));
 	GtkWidget *menu_button = gtk_menu_button_new();
 	gtk_menu_button_set_icon_name(GTK_MENU_BUTTON(menu_button), "open-menu-symbolic");
 	gtk_menu_button_set_menu_model(GTK_MENU_BUTTON(menu_button), G_MENU_MODEL(menu));
@@ -502,7 +605,7 @@ static GtkWidget *create_empty_page(void) {
 	gtk_widget_add_css_class(button, "pill");
 	gtk_widget_add_css_class(button, "suggested-action");
 	GtkWidget *page = adw_status_page_new();
-	adw_status_page_set_icon_name(ADW_STATUS_PAGE(page), "text-x-generic-symbolic");
+	adw_status_page_set_icon_name(ADW_STATUS_PAGE(page), get_application_identity()->id);
 	adw_status_page_set_title(ADW_STATUS_PAGE(page), TEXT_EMPTY_TITLE);
 	adw_status_page_set_description(ADW_STATUS_PAGE(page), TEXT_EMPTY_DESCRIPTION);
 	adw_status_page_set_child(ADW_STATUS_PAGE(page), button);
@@ -555,6 +658,7 @@ static void add_actions(Window *window) {
 	window->edit_action = G_SIMPLE_ACTION(g_action_map_lookup_action(map, "edit"));
 	window->save_action = G_SIMPLE_ACTION(g_action_map_lookup_action(map, "save"));
 	window->close_action = G_SIMPLE_ACTION(g_action_map_lookup_action(map, "close-tab"));
+	window->find_action = G_SIMPLE_ACTION(g_action_map_lookup_action(map, "find"));
 }
 
 

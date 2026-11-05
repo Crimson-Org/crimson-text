@@ -13,6 +13,7 @@
 /* The search match colours of the Adwaita style scheme the editor uses */
 #define FIND_BACKGROUND "#f8e45c"
 #define FIND_FOREGROUND "#3d3846"
+#define FIND_LABEL_CLASS "find-match"
 
 /* One place where the search text appears, in characters of a label or a text view */
 typedef struct {
@@ -142,12 +143,43 @@ static int get_visible_match(Tab *tab, GArray *matches) {
 
 
 static void clear_match_mark(Tab *tab) {
+	if (tab->find_label) {
+		gtk_label_set_attributes(GTK_LABEL(tab->find_label), NULL);
+		gtk_widget_remove_css_class(tab->find_label, FIND_LABEL_CLASS);
+		g_clear_weak_pointer(&tab->find_label);
+	}
 	if (!tab->find_buffer)
 		return;
 	GtkTextIter start, end;
 	gtk_text_buffer_get_bounds(tab->find_buffer, &start, &end);
 	gtk_text_buffer_remove_tag_by_name(tab->find_buffer, FIND_TAG, &start, &end);
 	g_clear_weak_pointer(&tab->find_buffer);
+}
+
+
+/* A match in a table cell takes the same colours as one in the text, over the cell's own formatting */
+static void mark_label_match(Tab *tab, GtkWidget *label, int start, int end) {
+	const char *text = gtk_label_get_text(GTK_LABEL(label));
+	guint start_index = (guint)(g_utf8_offset_to_pointer(text, start) - text);
+	guint end_index = (guint)(g_utf8_offset_to_pointer(text, end) - text);
+	PangoColor background, foreground;
+	pango_color_parse(&background, FIND_BACKGROUND);
+	pango_color_parse(&foreground, FIND_FOREGROUND);
+	PangoAttrList *marks = pango_attr_list_new();
+	PangoAttribute *attributes[] = {
+		pango_attr_background_new(background.red, background.green, background.blue),
+		pango_attr_foreground_new(foreground.red, foreground.green, foreground.blue),
+	};
+	for (guint index = 0; index < G_N_ELEMENTS(attributes); index++) {
+		attributes[index]->start_index = start_index;
+		attributes[index]->end_index = end_index;
+		pango_attr_list_insert(marks, attributes[index]);
+	}
+	gtk_label_set_attributes(GTK_LABEL(label), marks);
+	pango_attr_list_unref(marks);
+	/* A label draws its marks as see-through as its text colour, which is see-through in light styles */
+	gtk_widget_add_css_class(label, FIND_LABEL_CLASS);
+	g_set_weak_pointer(&tab->find_label, label);
 }
 
 
@@ -163,8 +195,9 @@ static void mark_match(Tab *tab, GtkTextBuffer *buffer, const GtkTextIter *start
 
 static void select_match(Tab *tab, FindMatch *match) {
 	clear_match_mark(tab);
+	/* A cell's selection would draw over the mark, and nobody can copy it while the find entry has focus */
 	if (GTK_IS_LABEL(match->widget)) {
-		gtk_label_select_region(GTK_LABEL(match->widget), match->start, match->end);
+		mark_label_match(tab, match->widget, match->start, match->end);
 		return;
 	}
 	GtkTextBuffer *buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(match->widget));

@@ -13,8 +13,6 @@
 #include "window/tab-places.h"
 #include "window/tab.h"
 
-#define CONTENT_WIDTH 880
-#define CONTENT_TIGHTENING 600
 #define STACK_DURATION 260
 
 static void toggle_task(long offset, gboolean is_done, gpointer data);
@@ -30,6 +28,7 @@ static void free_tab(gpointer data) {
 	g_clear_object(&tab->next_content);
 	g_clear_object(&tab->editor_search);
 	g_clear_weak_pointer(&tab->find_buffer);
+	g_clear_weak_pointer(&tab->find_label);
 	g_array_unref(tab->back_places);
 	g_array_unref(tab->forward_places);
 	g_free(tab->source);
@@ -239,12 +238,15 @@ static void swap_content(Tab *tab) {
 }
 
 
-/* A missing file names its path and offers to create it, and any other failure shows its reason */
+/* A missing file names itself and offers to create it, and any other failure shows its reason */
 static void show_error_page(Tab *tab, const char *error) {
 	gboolean is_missing = !g_file_query_exists(tab->file, NULL);
-	g_autofree char *path = g_file_get_parse_name(tab->file);
+	g_autofree char *name = get_tab_title(tab);
+	g_autofree char *missing = g_strdup_printf(TEXT_FILE_MISSING_DETAIL, name);
+	adw_status_page_set_icon_name(ADW_STATUS_PAGE(tab->error_page),
+		is_missing ? "document-new-symbolic" : "dialog-error-symbolic");
 	adw_status_page_set_title(ADW_STATUS_PAGE(tab->error_page), is_missing ? TEXT_FILE_MISSING : TEXT_LOAD_FAILED);
-	adw_status_page_set_description(ADW_STATUS_PAGE(tab->error_page), is_missing ? path : error);
+	adw_status_page_set_description(ADW_STATUS_PAGE(tab->error_page), is_missing ? missing : error);
 	gtk_widget_set_visible(tab->create_button, is_missing);
 	gtk_stack_set_visible_child_name(GTK_STACK(tab->root), "error");
 }
@@ -411,16 +413,6 @@ static void activate_link(const char *link, gpointer data) {
 }
 
 
-/* Centres a text view at the reading width, staying the scrolled child so only the part in sight is laid out */
-static GtkWidget *create_page_clamp(GtkWidget *view) {
-	GtkWidget *clamp = adw_clamp_scrollable_new();
-	adw_clamp_scrollable_set_maximum_size(ADW_CLAMP_SCROLLABLE(clamp), CONTENT_WIDTH);
-	adw_clamp_scrollable_set_tightening_threshold(ADW_CLAMP_SCROLLABLE(clamp), CONTENT_TIGHTENING);
-	adw_clamp_scrollable_set_child(ADW_CLAMP_SCROLLABLE(clamp), view);
-	return clamp;
-}
-
-
 /* Ctrl and the wheel zoom the page, which the shared smooth scrolling passes on untouched */
 static gboolean zoom_with_wheel(GtkEventControllerScroll *controller, double delta_x, double delta_y,
 	GtkWidget *scroller) {
@@ -515,7 +507,7 @@ Tab *create_tab(GFile *file, const TabEvents *events) {
 	gtk_stack_add_named(GTK_STACK(tab->root), create_view_page(tab), "view");
 	gtk_stack_add_named(GTK_STACK(tab->root), create_edit_page(tab), "edit");
 	tab->error_page = adw_status_page_new();
-	adw_status_page_set_icon_name(ADW_STATUS_PAGE(tab->error_page), "dialog-error-symbolic");
+	gtk_widget_add_css_class(tab->error_page, "symbolic-status");
 	tab->create_button = gtk_button_new_with_label(TEXT_CREATE_FILE);
 	gtk_widget_set_halign(tab->create_button, GTK_ALIGN_CENTER);
 	gtk_widget_add_css_class(tab->create_button, "pill");

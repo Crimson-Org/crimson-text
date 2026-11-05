@@ -3,23 +3,96 @@
 	color: var(--view-fg-color);
 }
 
+/* The lines and corners of tables, in documents and in data files alike */
+:root {
+	--table-line-color: alpha(currentColor, 0.15);
+	--table-radius: 6px;
+}
+
 .table {
-	background-color: alpha(currentColor, 0.15);
+	background-color: var(--table-line-color);
 	padding: 1px;
-	border-radius: 6px;
+	border-radius: var(--table-radius);
 }
 
 .cell {
 	background-color: var(--view-bg-color);
+}
+
+/* Cells keep GitHub's table spacing and shade every other row, in documents and in data files alike */
+.cell,
+.data-cell,
+columnview.data-table > header > button {
 	padding: 6px 13px;
 }
 
-.cell.even {
+.cell.even,
+.data-cell.even {
 	background-image: linear-gradient(alpha(currentColor, 0.04), alpha(currentColor, 0.04));
 }
 
-.cell.header {
+.cell.header,
+columnview.data-table > header > button > box {
 	font-weight: 600;
+}
+
+/* Data files read like the tables in documents, with lines round every cell, so the grid closes round the columns
+ * however wide the window is, and titles in full colour that hide the rows scrolling under them */
+columnview.data-table > header {
+	background-color: var(--view-bg-color);
+}
+
+columnview.data-table > header > button > box {
+	color: inherit;
+	font-size: inherit;
+}
+
+columnview.data-table > header > button,
+columnview.data-table > listview > row > cell {
+	border-right: 1px solid var(--table-line-color);
+	border-bottom: 1px solid var(--table-line-color);
+}
+
+columnview.data-table > header > button {
+	border-top: 1px solid var(--table-line-color);
+}
+
+columnview.data-table > header > button:first-child,
+columnview.data-table > listview > row > cell:first-child {
+	border-left: 1px solid var(--table-line-color);
+}
+
+columnview.data-table > header > button:first-child {
+	border-top-left-radius: var(--table-radius);
+}
+
+columnview.data-table > header > button:last-child {
+	border-top-right-radius: var(--table-radius);
+}
+
+columnview.data-table > listview > row:last-child > cell:first-child {
+	border-bottom-left-radius: var(--table-radius);
+}
+
+columnview.data-table > listview > row:last-child > cell:last-child {
+	border-bottom-right-radius: var(--table-radius);
+}
+
+columnview.data-table > listview > row > cell {
+	padding: 0;
+}
+
+/* A table cell holding a find match draws in solid colours, so the mark is as strong as one in the text */
+label.find-match {
+	color: oklab(from var(--view-fg-color) l a b / 1);
+}
+
+/* A symbolic icon fills its whole square, while the page in the Crimson app icon fills 108 of its 128 pixels from
+ * 10 pixels down, so problem pages draw their icon at the same size and place as the start page draws the app icon */
+statuspage.symbolic-status > scrolledwindow > viewport > box > clamp > box > .icon {
+	-gtk-icon-size: 108px;
+	margin-top: 10px;
+	margin-bottom: 34px;
 }
 
 .picture {
@@ -48,6 +121,11 @@
 
 .block-edit.shown {
 	opacity: 1;
+}
+
+/* Long documents list many headings, so the contents rows sit closer than a plain sidebar's */
+.outline > row {
+	min-height: 32px;
 }
 
 .outline-top {
@@ -104,4 +182,9 @@ checkbutton.task {
 textview.editor,
 textview.editor text {
 	background-color: transparent;
+}
+
+/* Menus and other popups fade and grow in rather than appearing at once, as in the other Crimson apps */
+popover > contents {
+	animation: pop-in 120ms ease-out;
 }

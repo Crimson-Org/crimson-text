@@ -163,12 +163,18 @@ static void picture_flow_init(PictureFlow *flow) {
 static void show_picture_menu(GtkGestureClick *gesture, int presses, double x, double y, PictureFlow *flow) {
 	GtkWidget *picture = gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(gesture));
 	if (!flow->menu) {
+		g_autoptr(GMenu) opening = g_menu_new();
+		g_menu_append(opening, TEXT_OPEN_PICTURE, "picture.open");
+		g_autoptr(GMenu) keeping = g_menu_new();
+		g_menu_append(keeping, TEXT_SAVE_PICTURE, "picture.save");
+		g_menu_append(keeping, TEXT_COPY_PICTURE, "picture.copy");
 		g_autoptr(GMenu) model = g_menu_new();
-		g_menu_append(model, TEXT_OPEN_PICTURE, "picture.open");
-		g_menu_append(model, TEXT_SAVE_PICTURE, "picture.save");
-		g_menu_append(model, TEXT_COPY_PICTURE, "picture.copy");
+		g_menu_append_section(model, NULL, G_MENU_MODEL(opening));
+		g_menu_append_section(model, NULL, G_MENU_MODEL(keeping));
 		flow->menu = gtk_popover_menu_new_from_model(G_MENU_MODEL(model));
 		gtk_popover_set_has_arrow(GTK_POPOVER(flow->menu), FALSE);
+		/* The menu opens from its corner at the pointer, as the page's own menu does */
+		gtk_widget_set_halign(flow->menu, GTK_ALIGN_START);
 		gtk_widget_set_parent(flow->menu, GTK_WIDGET(flow));
 	}
 	graphene_point_t point;

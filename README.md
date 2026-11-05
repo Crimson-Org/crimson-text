@@ -40,7 +40,7 @@ Crimson Text shows only the document, with an optional contents sidebar.
 
 ### Large files
 
-Large files and pictures load in pieces, so the window shows them while they arrive.\
+Large files and images load in pieces, so the window shows them while they arrive.\
 Files reload by themselves when another program changes them, unless you have unsaved edits.
 
 ### More than Markdown

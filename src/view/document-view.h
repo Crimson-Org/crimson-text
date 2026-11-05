@@ -5,6 +5,11 @@
 /* Room between the view's edges and its text, before any indentation */
 /* The page margin of both the reading view and the editor */
 #define DOCUMENT_MARGIN 28
+/* Width of the centred page that documents, the editor and data tables are read at */
+#define PAGE_WIDTH 880
+#define PAGE_TIGHTENING 600
+/* Table cells wider than this many characters wrap in documents and are cut short in data files */
+#define MAXIMUM_CELL_CHARACTERS 48
 /* Code tab stops are this many characters wide, in code blocks and in the editor */
 #define CODE_TAB_WIDTH 4
 /* Space below a block and below a line inside a list, before zooming */
@@ -21,6 +26,7 @@
 G_DECLARE_FINAL_TYPE(DocumentView, document_view, DOCUMENT, VIEW, GtkTextView)
 
 GtkWidget *create_document_view(void);
+GtkWidget *create_page_clamp(GtkWidget *view);
 GtkWidget *create_block_frame(GtkWidget *child, int indent);
 GtkTextTag *get_indent_tag(GtkTextBuffer *buffer, int left, int hang);
 GtkTextTag *get_bar_tag(GtkTextBuffer *buffer, int x, const char *color);

@@ -8,7 +8,7 @@
 struct Window {
 	GtkWidget *window, *split, *tab_view, *title, *stack, *edit_button, *outline_list, *outline_stack, *toasts;
 	GtkWidget *find_bar, *find_entry, *find_count, *sidebar_button;
-	GSimpleAction *edit_action, *save_action, *close_action;
+	GSimpleAction *edit_action, *save_action, *close_action, *find_action;
 	/* Tab and outline version the sidebar currently lists */
 	Tab *outline_tab;
 	guint outline_generation;

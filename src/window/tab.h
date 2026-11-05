@@ -76,9 +76,10 @@ struct Tab {
 	gulong landing_handler, editor_landing_handler;
 	/* Earlier and later places for the back and forward buttons */
 	GArray *back_places, *forward_places;
-	/* Number of the selected search match in the view, and the buffer where it is marked */
+	/* Number of the selected search match in the view, and the buffer or table cell where it is marked */
 	int find_index;
 	GtkTextBuffer *find_buffer;
+	GtkWidget *find_label;
 	gboolean is_editing, is_editor_filled;
 	/* Markdown and checklists have headings for the contents sidebar, other kinds of file do not */
 	gboolean has_contents;

@@ -468,6 +468,16 @@ GtkWidget *create_document_view(void) {
 }
 
 
+/* Centres a scrollable view at the page width, staying the scrolled child so only the part in sight is laid out */
+GtkWidget *create_page_clamp(GtkWidget *view) {
+	GtkWidget *clamp = adw_clamp_scrollable_new();
+	adw_clamp_scrollable_set_maximum_size(ADW_CLAMP_SCROLLABLE(clamp), PAGE_WIDTH);
+	adw_clamp_scrollable_set_tightening_threshold(ADW_CLAMP_SCROLLABLE(clamp), PAGE_TIGHTENING);
+	adw_clamp_scrollable_set_child(ADW_CLAMP_SCROLLABLE(clamp), view);
+	return clamp;
+}
+
+
 /* Width of the text beside the frame, or nothing before its view has a size */
 static int get_frame_width(BlockFrame *frame) {
 	GtkWidget *view = gtk_widget_get_ancestor(GTK_WIDGET(frame), GTK_TYPE_TEXT_VIEW);

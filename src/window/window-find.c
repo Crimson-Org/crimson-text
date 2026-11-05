@@ -4,6 +4,8 @@
 #include "common/widgets/spacing.h"
 
 #define FIND_BAR_WIDTH 600
+/* The count sits inside the end of the field, left of the clear button and its padding */
+#define CLEAR_BUTTON_ROOM 32
 
 
 static void run_find(Window *window, FindDirection direction) {
@@ -15,6 +17,11 @@ static void run_find(Window *window, FindDirection direction) {
 	g_autofree char *count = total > 0 && current > 0 ? g_strdup_printf(TEXT_FIND_COUNT, current, total)
 		: g_strdup(*query && total == 0 ? TEXT_FIND_NONE : "");
 	gtk_label_set_text(GTK_LABEL(window->find_count), count);
+	/* The typed text stops short of the count, which lies over the end of the field */
+	int count_width = 0;
+	gtk_widget_measure(window->find_count, GTK_ORIENTATION_HORIZONTAL, -1, NULL, &count_width, NULL, NULL);
+	GtkWidget *text = GTK_WIDGET(gtk_editable_get_delegate(GTK_EDITABLE(window->find_entry)));
+	gtk_widget_set_margin_end(text, *count ? count_width + SPACING_SMALL : 0);
 }
 
 
@@ -95,15 +102,29 @@ GtkWidget *create_find_bar(Window *window) {
 	g_signal_connect(keys, "key-pressed", G_CALLBACK(press_find_key), window);
 	gtk_widget_add_controller(window->find_entry, keys);
 	window->find_count = gtk_label_new(NULL);
+	gtk_widget_set_halign(window->find_count, GTK_ALIGN_END);
+	gtk_widget_set_margin_end(window->find_count, CLEAR_BUTTON_ROOM);
+	gtk_widget_set_can_target(window->find_count, FALSE);
 	gtk_widget_add_css_class(window->find_count, "dimmed");
 	gtk_widget_add_css_class(window->find_count, "numeric");
+	GtkWidget *field = gtk_overlay_new();
+	gtk_overlay_set_child(GTK_OVERLAY(field), window->find_entry);
+	gtk_overlay_add_overlay(GTK_OVERLAY(field), window->find_count);
+	GtkWidget *arrows = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+	gtk_box_append(GTK_BOX(arrows), create_find_button("go-up-symbolic", TEXT_FIND_PREVIOUS,
+		G_CALLBACK(find_previous), window));
+	gtk_box_append(GTK_BOX(arrows), create_find_button("go-down-symbolic", TEXT_FIND_NEXT, G_CALLBACK(find_next),
+		window));
+	/* An empty box as wide as the arrows balances them, so the field itself sits in the middle of the page */
+	GtkWidget *balance = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+	GtkSizeGroup *sides = gtk_size_group_new(GTK_SIZE_GROUP_HORIZONTAL);
+	gtk_size_group_add_widget(sides, balance);
+	gtk_size_group_add_widget(sides, arrows);
+	g_object_unref(sides);
 	GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, SPACING_SMALL);
-	gtk_box_append(GTK_BOX(row), window->find_entry);
-	gtk_box_append(GTK_BOX(row), window->find_count);
-	gtk_box_append(GTK_BOX(row), create_find_button("go-up-symbolic", TEXT_FIND_PREVIOUS, G_CALLBACK(find_previous),
-		window));
-	gtk_box_append(GTK_BOX(row), create_find_button("go-down-symbolic", TEXT_FIND_NEXT, G_CALLBACK(find_next),
-		window));
+	gtk_box_append(GTK_BOX(row), balance);
+	gtk_box_append(GTK_BOX(row), field);
+	gtk_box_append(GTK_BOX(row), arrows);
 	GtkWidget *clamp = adw_clamp_new();
 	adw_clamp_set_maximum_size(ADW_CLAMP(clamp), FIND_BAR_WIDTH);
 	adw_clamp_set_child(ADW_CLAMP(clamp), row);

@@ -1,5 +1,7 @@
 #include <string.h>
 
+#include "common/widgets/spacing.h"
+#include "view/document-view.h"
 #include "view/data-table.h"
 
 /* Shows comma and tab separated files in a recycling column view, which only builds widgets for visible rows */
@@ -91,7 +93,7 @@ static void data_rows_init(DataRows *rows) {
 
 
 static GtkColumnView *get_column_view(GtkWidget *table) {
-	return GTK_COLUMN_VIEW(gtk_scrolled_window_get_child(GTK_SCROLLED_WINDOW(table)));
+	return g_object_get_data(G_OBJECT(table), "view");
 }
 
 
@@ -102,18 +104,44 @@ static DataRows *get_rows(GtkWidget *table) {
 
 static void set_up_cell(GtkSignalListItemFactory *factory, GtkListItem *item, gpointer data) {
 	GtkWidget *label = gtk_label_new(NULL);
-	gtk_label_set_xalign(GTK_LABEL(label), 0);
 	gtk_label_set_ellipsize(GTK_LABEL(label), PANGO_ELLIPSIZE_END);
+	gtk_label_set_max_width_chars(GTK_LABEL(label), MAXIMUM_CELL_CHARACTERS);
+	gtk_widget_add_css_class(label, "data-cell");
 	gtk_list_item_set_child(item, label);
 }
 
 
+/* A cell holding only a number, which lines up on the right as numbers do in tables, where words the number reader
+ * also takes, such as nan or inf, stay words */
+static gboolean is_number(const char *text) {
+	while (g_ascii_isspace(*text))
+		text++;
+	if (!g_ascii_isdigit(*text) && !strchr("+-.", *text))
+		return FALSE;
+	char *end = NULL;
+	g_ascii_strtod(text, &end);
+	while (g_ascii_isspace(*end))
+		end++;
+	return end != text && *end == 0;
+}
+
+
+/* Every other row is shaded by its place in the file, since the view reuses row widgets as it scrolls */
 static void bind_cell(GtkSignalListItemFactory *factory, GtkListItem *item, gpointer column) {
 	DataRow *row = gtk_list_item_get_item(item);
 	guint index = GPOINTER_TO_UINT(column);
 	const char *text = index < g_strv_length(row->cells) ? row->cells[index] : "";
-	gtk_label_set_text(GTK_LABEL(gtk_list_item_get_child(item)), text);
-	gtk_widget_set_tooltip_text(gtk_list_item_get_child(item), *text ? text : NULL);
+	GtkWidget *label = gtk_list_item_get_child(item);
+	gtk_label_set_text(GTK_LABEL(label), text);
+	/* A cell is only cut short past the widest cell a document table shows, so a table wider than the page grows
+	 * past it and scrolls sideways instead of cutting every cell */
+	gtk_label_set_width_chars(GTK_LABEL(label), (int)MIN(g_utf8_strlen(text, -1), MAXIMUM_CELL_CHARACTERS));
+	gtk_label_set_xalign(GTK_LABEL(label), is_number(text) ? 1 : 0);
+	gtk_widget_set_tooltip_text(label, *text ? text : NULL);
+	if (gtk_list_item_get_position(item) % 2)
+		gtk_widget_add_css_class(label, "even");
+	else
+		gtk_widget_remove_css_class(label, "even");
 }
 
 
@@ -158,11 +186,22 @@ GtkWidget *create_data_table(void) {
 	gtk_single_selection_set_can_unselect(selection, TRUE);
 	gtk_single_selection_set_selected(selection, GTK_INVALID_LIST_POSITION);
 	GtkWidget *view = gtk_column_view_new(GTK_SELECTION_MODEL(selection));
-	gtk_column_view_set_show_row_separators(GTK_COLUMN_VIEW(view), TRUE);
-	gtk_column_view_set_show_column_separators(GTK_COLUMN_VIEW(view), TRUE);
 	gtk_widget_add_css_class(view, "data-table");
-	GtkWidget *table = gtk_scrolled_window_new();
-	gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(table), view);
+	/* The table sits on the page of a document, in its colours, text size and margins, and grows past the page
+	 * only when its columns need the room */
+	gtk_widget_set_margin_start(view, DOCUMENT_MARGIN);
+	gtk_widget_set_margin_end(view, DOCUMENT_MARGIN);
+	GtkWidget *scroller = gtk_scrolled_window_new();
+	gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroller), create_page_clamp(view));
+	gtk_widget_set_vexpand(scroller, TRUE);
+	/* The gap above the table lies outside the scroller, which draws the shadow of rows scrolled out of sight
+	 * right below the titles */
+	gtk_widget_set_margin_top(scroller, SPACING_HUGE);
+	GtkWidget *table = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+	gtk_widget_add_css_class(table, "content");
+	gtk_widget_add_css_class(table, "document");
+	gtk_box_append(GTK_BOX(table), scroller);
+	g_object_set_data(G_OBJECT(table), "view", view);
 	g_object_set_data_full(G_OBJECT(table), "rows", rows, g_object_unref);
 	return table;
 }

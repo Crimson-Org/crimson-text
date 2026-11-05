@@ -11,6 +11,11 @@
 #define SCROLL_MARGIN 12
 #define BLOCK_EDIT_SIZE 34
 #define BLOCK_EDIT_GAP 6
+/* The copy button sits halfway into the padding round the code, clear of the block's rounded corner */
+#define CODE_COPY_INSET (CODE_PADDING / 2)
+/* The text view's own keys for copying and selecting everything */
+#define COPY_KEYS "<Control>c"
+#define SELECT_ALL_KEYS "<Control>a"
 /* Pixels a block may start above the view and still count as starting in it */
 #define VIEW_LINE_SLACK 8
 /* Back keeps this many earlier places, so a long reading session holds no endless list */
@@ -189,8 +194,8 @@ static void place_code_copy(Tab *tab, const GtkTextIter *line) {
 	tab->copy_end = gtk_text_iter_get_offset(&end);
 	int top = 0, height = 0, x = 0, y = 0;
 	gtk_text_view_get_line_yrange(get_view(tab), &start, &top, &height);
-	int right = gtk_widget_get_width(GTK_WIDGET(get_view(tab))) - DOCUMENT_MARGIN - BLOCK_EDIT_SIZE - BLOCK_EDIT_GAP;
-	gtk_text_view_buffer_to_window_coords(get_view(tab), GTK_TEXT_WINDOW_WIDGET, right, top + BLOCK_EDIT_GAP, &x, &y);
+	int right = gtk_widget_get_width(GTK_WIDGET(get_view(tab))) - DOCUMENT_MARGIN - BLOCK_EDIT_SIZE - CODE_COPY_INSET;
+	gtk_text_view_buffer_to_window_coords(get_view(tab), GTK_TEXT_WINDOW_WIDGET, right, top + CODE_COPY_INSET, &x, &y);
 	graphene_point_t place;
 	if (!gtk_widget_compute_point(GTK_WIDGET(get_view(tab)), tab->overlay, &GRAPHENE_POINT_INIT(x, y), &place))
 		return;
@@ -554,6 +559,14 @@ void add_block_menu(Tab *tab, GtkWidget *view) {
 }
 
 
+/* Shows the keys the text view already answers to beside an item, as the main menu shows its shortcuts */
+static void append_with_keys(GMenu *menu, const char *label, const char *action, const char *keys) {
+	g_autoptr(GMenuItem) item = g_menu_item_new(label, action);
+	g_menu_item_set_attribute(item, "accel", "s", keys);
+	g_menu_append_item(menu, item);
+}
+
+
 /* One menu and its actions on the overlay, shared by every view the tab renders */
 static void create_view_menu(Tab *tab) {
 	static const GActionEntry ACTIONS[] = {
@@ -569,8 +582,8 @@ static void create_view_menu(Tab *tab) {
 	g_autoptr(GMenu) editing = g_menu_new();
 	g_autoptr(GMenu) selection = g_menu_new();
 	g_menu_append(editing, TEXT_EDIT_HERE_MENU, "document.edit-here");
-	g_menu_append(selection, TEXT_COPY_MENU, "document.copy");
-	g_menu_append(selection, TEXT_SELECT_ALL_MENU, "document.select-all");
+	append_with_keys(selection, TEXT_COPY_MENU, "document.copy", COPY_KEYS);
+	append_with_keys(selection, TEXT_SELECT_ALL_MENU, "document.select-all", SELECT_ALL_KEYS);
 	g_menu_append_section(menu, NULL, G_MENU_MODEL(editing));
 	g_menu_append_section(menu, NULL, G_MENU_MODEL(selection));
 	tab->view_menu = gtk_popover_menu_new_from_model(G_MENU_MODEL(menu));

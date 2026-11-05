@@ -1,25 +1,28 @@
+#include "common/widgets/spacing.h"
 #include "view/outline-list.h"
 #include "view/render.h"
 
-#define OUTLINE_INDENT 14
-#define DEEPEST_INDENTED_LEVEL 6
+#define OUTLINE_INDENT SPACING_ROOMY
+#define DEEPEST_INDENT 5
 
-/* One heading handed to a row while it is in view */
+/* One heading handed to a row while it is in view, with its depth below the document's top heading level */
 struct _OutlineRow {
 	GObject parent_instance;
 	char *title;
-	int level;
+	int depth;
 };
 
 #define OUTLINE_ROW_TYPE (outline_row_get_type())
 G_DECLARE_FINAL_TYPE(OutlineRow, outline_row, CRIMSON, OUTLINE_ROW, GObject)
 G_DEFINE_FINAL_TYPE(OutlineRow, outline_row, G_TYPE_OBJECT)
 
-/* The headings of one document as a list model, counting only the ones announced so far */
+/* The headings of one document as a list model, counting only the ones announced so far, with the level of the
+ * highest heading among them, which takes no indent, so a document starting at level two is not indented */
 struct _OutlineEntries {
 	GObject parent_instance;
 	GPtrArray *entries;
 	guint count;
+	int top_level;
 };
 
 #define OUTLINE_ENTRIES_TYPE (outline_entries_get_type())
@@ -63,7 +66,7 @@ static gpointer get_entry(GListModel *model, guint position) {
 	const OutlineEntry *entry = g_ptr_array_index(entries->entries, position);
 	OutlineRow *row = g_object_new(OUTLINE_ROW_TYPE, NULL);
 	row->title = g_strdup(entry->title);
-	row->level = entry->level;
+	row->depth = MAX(entry->level - entries->top_level, 0);
 	return row;
 }
 
@@ -87,6 +90,7 @@ static void outline_entries_class_init(OutlineEntriesClass *class) {
 
 
 static void outline_entries_init(OutlineEntries *entries) {
+	entries->top_level = G_MAXINT;
 }
 
 
@@ -103,8 +107,8 @@ static void bind_row(GtkSignalListItemFactory *factory, GtkListItem *item, gpoin
 	GtkWidget *label = gtk_list_item_get_child(item);
 	gtk_label_set_text(GTK_LABEL(label), row->title);
 	gtk_widget_set_tooltip_text(label, row->title);
-	gtk_widget_set_margin_start(label, OUTLINE_INDENT * CLAMP(row->level - 1, 0, DEEPEST_INDENTED_LEVEL - 1));
-	if (row->level == 1)
+	gtk_widget_set_margin_start(label, OUTLINE_INDENT * MIN(row->depth, DEEPEST_INDENT));
+	if (row->depth == 0)
 		gtk_widget_add_css_class(label, "outline-top");
 	else
 		gtk_widget_remove_css_class(label, "outline-top");
@@ -140,6 +144,7 @@ GtkWidget *create_outline_list(OutlineChosen chosen, gpointer data) {
 	g_signal_connect(factory, "bind", G_CALLBACK(bind_row), NULL);
 	OutlineEntries *entries = g_object_new(OUTLINE_ENTRIES_TYPE, NULL);
 	GtkWidget *list = gtk_list_view_new(GTK_SELECTION_MODEL(gtk_no_selection_new(G_LIST_MODEL(entries))), factory);
+	gtk_widget_add_css_class(list, "outline");
 	gtk_list_view_set_single_click_activate(GTK_LIST_VIEW(list), TRUE);
 	OutlineChoice *choice = g_new(OutlineChoice, 1);
 	*choice = (OutlineChoice){chosen, data};
@@ -155,15 +160,22 @@ void show_outline_entries(GtkWidget *list, GPtrArray *entries, gboolean is_new_d
 		g_clear_pointer(&model->entries, g_ptr_array_unref);
 		model->entries = entries ? g_ptr_array_ref(entries) : NULL;
 		model->count = 0;
+		model->top_level = G_MAXINT;
 		if (removed)
 			g_list_model_items_changed(G_LIST_MODEL(model), 0, removed, 0);
 	}
 	guint total = model->entries ? model->entries->len : 0;
 	if (total <= model->count)
 		return;
-	guint added = total - model->count;
+	guint shown = model->count;
+	int top_level = model->top_level;
+	for (guint index = shown; index < total; index++)
+		top_level = MIN(top_level, ((const OutlineEntry *)g_ptr_array_index(model->entries, index))->level);
 	model->count = total;
-	g_list_model_items_changed(G_LIST_MODEL(model), total - added, 0, added);
+	/* A higher heading arriving later moves every row already shown, so they are all handed out again */
+	guint unchanged = top_level == model->top_level ? shown : 0;
+	model->top_level = top_level;
+	g_list_model_items_changed(G_LIST_MODEL(model), unchanged, shown - unchanged, total - unchanged);
 }
 
 

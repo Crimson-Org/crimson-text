@@ -12,7 +12,6 @@
 #include "common/widgets/spacing.h"
 
 #define LIST_SPACING 6
-#define MAXIMUM_CELL_CHARACTERS 48
 #define BULLET_COUNT 3
 /* Unzoomed widths a list level and a quote level indent their text by */
 #define LIST_INDENT 26

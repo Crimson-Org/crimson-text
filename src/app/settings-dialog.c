@@ -21,11 +21,35 @@ static void change_size(AdwSpinRow *row, GParamSpec *property, int *size) {
 }
 
 
-/* Text size as a percentage of the default look */
+static gboolean show_percent(AdwSpinRow *row, gpointer data) {
+	g_autofree char *text = g_strdup_printf(TEXT_PERCENT, (int)adw_spin_row_get_value(row));
+	gtk_editable_set_text(GTK_EDITABLE(row), text);
+	return TRUE;
+}
+
+
+/* Reads a typed size with or without its percent sign */
+static int read_percent(AdwSpinRow *row, double *value, gpointer data) {
+	const char *text = gtk_editable_get_text(GTK_EDITABLE(row));
+	char *end = NULL;
+	*value = g_ascii_strtod(text, &end);
+	while (g_ascii_isspace(*end))
+		end++;
+	if (*end == '%')
+		end++;
+	return end != text && *end == 0 ? TRUE : GTK_INPUT_ERROR;
+}
+
+
+/* Text size as a percentage of the default look, shown with its sign as the zoom message shows it, so the row
+ * takes more than digits */
 static GtkWidget *create_size_row(const char *title, const char *subtitle, int *size) {
 	GtkWidget *row = adw_spin_row_new_with_range(MINIMUM_TEXT_SIZE, MAXIMUM_TEXT_SIZE, SIZE_STEP);
 	adw_preferences_row_set_title(ADW_PREFERENCES_ROW(row), title);
 	adw_action_row_set_subtitle(ADW_ACTION_ROW(row), subtitle);
+	adw_spin_row_set_numeric(ADW_SPIN_ROW(row), FALSE);
+	g_signal_connect(row, "output", G_CALLBACK(show_percent), NULL);
+	g_signal_connect(row, "input", G_CALLBACK(read_percent), NULL);
 	adw_spin_row_set_value(ADW_SPIN_ROW(row), *size);
 	g_signal_connect(row, "notify::value", G_CALLBACK(change_size), size);
 	return row;
@@ -48,10 +72,12 @@ static GtkWidget *create_pencil_row(void) {
 }
 
 
-static void choose_font(GtkFontDialogButton *button, GParamSpec *property, gpointer data) {
+/* The way back to the system font only shows while another font is chosen */
+static void choose_font(GtkFontDialogButton *button, GParamSpec *property, GtkWidget *reset) {
 	PangoFontDescription *font = gtk_font_dialog_button_get_font_desc(button);
 	const char *family = font ? pango_font_description_get_family(font) : NULL;
 	g_set_str(&get_settings()->editor_font, family && g_strcmp0(family, SYSTEM_MONOSPACE) != 0 ? family : "");
+	gtk_widget_set_visible(reset, *get_settings()->editor_font != 0);
 	store_settings();
 }
 
@@ -72,12 +98,13 @@ static GtkWidget *create_font_row(void) {
 	gtk_font_dialog_button_set_font_desc(GTK_FONT_DIALOG_BUTTON(button), font);
 	pango_font_description_free(font);
 	gtk_widget_set_valign(button, GTK_ALIGN_CENTER);
-	g_signal_connect(button, "notify::font-desc", G_CALLBACK(choose_font), NULL);
 	GtkWidget *reset = gtk_button_new_from_icon_name("edit-undo-symbolic");
 	gtk_widget_set_tooltip_text(reset, TEXT_SYSTEM_FONT);
 	gtk_widget_set_valign(reset, GTK_ALIGN_CENTER);
 	gtk_widget_add_css_class(reset, "flat");
+	gtk_widget_set_visible(reset, *family != 0);
 	g_signal_connect(reset, "clicked", G_CALLBACK(use_system_font), button);
+	g_signal_connect(button, "notify::font-desc", G_CALLBACK(choose_font), reset);
 	GtkWidget *row = adw_action_row_new();
 	adw_preferences_row_set_title(ADW_PREFERENCES_ROW(row), TEXT_EDITOR_FONT);
 	adw_action_row_add_suffix(ADW_ACTION_ROW(row), reset);
