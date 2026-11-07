@@ -3,9 +3,8 @@
 </p>
 
 <h1 align="center">Crimson Text</h1>
-<p align="center">A Linux text viewer and editor for <a href="https://daringfireball.net/projects/markdown/">Markdown</a> and other formats.<br>
-Click the pencil to edit, and click again to preview.<br>
-For READMEs, logs, TODO lists and CSV tables.</p>
+<p align="center">A Markdown viewer and text editor for Linux.<br>
+Read Markdown, code, logs, TODO lists and CSV tables, and edit them with one click.</p>
 
 <p align="center">
   <a href="https://gtk.org">
