@@ -29,8 +29,8 @@ For READMEs, logs, TODO lists and CSV tables.</p>
 
 ## Why
 
-Most viewers load slowly or clutter the screen with controls.\
-Crimson Text shows only the document, with an optional contents sidebar.
+Read a document without anything else in the way.\
+Crimson Text opens quickly and shows the page, with an optional table of contents.
 
 ## About
 
@@ -49,8 +49,8 @@ Code opens with colours, TODO files become tickable lists and CSV files become t
 
 ## Building
 
-You need a [C compiler](https://gcc.gnu.org/), [make](https://www.gnu.org/software/make/), [pkg-config](https://www.freedesktop.org/wiki/Software/pkg-config/) and the development files for [GTK4](https://gtk.org), [libadwaita](https://gnome.pages.gitlab.gnome.org/libadwaita/), [GtkSourceView](https://gitlab.gnome.org/GNOME/gtksourceview), [libcurl](https://curl.se/libcurl/) and [glycin](https://gitlab.gnome.org/GNOME/glycin).\
-On [openSUSE](https://www.opensuse.org/) these come from `sudo zypper install gcc make pkg-config gtk4-devel libadwaita-devel gtksourceview5-devel libcurl-devel libglycin-devel`.
+You need a [C compiler](https://gcc.gnu.org/), [pkg-config](https://www.freedesktop.org/wiki/Software/pkg-config/) and the development files for [GTK4](https://gtk.org), [libadwaita](https://gnome.pages.gitlab.gnome.org/libadwaita/), [GtkSourceView](https://gitlab.gnome.org/GNOME/gtksourceview), [libcurl](https://curl.se/libcurl/) and [glycin](https://gitlab.gnome.org/GNOME/glycin).\
+On [openSUSE](https://www.opensuse.org/) these come from `sudo zypper install gcc pkg-config gtk4-devel libadwaita-devel gtksourceview5-devel libcurl-devel libglycin-devel`.
 
 Steps:
  1. Clone using `git clone --recurse-submodules https://github.com/Crimson-Org/crimson-text`
